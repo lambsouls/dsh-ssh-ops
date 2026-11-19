@@ -17,7 +17,7 @@ function ok(label, fn) {
     catch (error) { console.error(`  ✗ ${label}\n    ${error?.message ?? error}`); process.exitCode = 1; }
 }
 
-const SERVER = { id: 'music-abc123', name: '音乐服务器', host: '10.0.0.7' };
+const SERVER = { id: 'fixture-music-abc123', name: '音乐服务器', host: '10.0.0.7' };
 
 console.log('[1] 归一化');
 ok('空档案有稳定形状', () => {
@@ -25,7 +25,7 @@ ok('空档案有稳定形状', () => {
     assert.deepStrictEqual(p.traits, []);
     assert.deepStrictEqual(p.portMap, []);
     assert.deepStrictEqual(p.openQuestions, []);
-    assert.strictEqual(p.serverId, 'music-abc123');
+    assert.strictEqual(p.serverId, 'fixture-music-abc123');
     assert.strictEqual(p.host, '10.0.0.7');
 });
 ok('非法 severity/kind/source 落到 null（由 finalize 补默认值），不抛错', () => {

@@ -20,7 +20,7 @@ const PROBE = path.join(ROOT, '_gate_probe');
 const octet = (a, b, c, d) => [a, b, c, d].join('.');
 // 用一个**不在白名单**里的公网地址形状。注意别用 203.0.113.x / 192.0.2.x ——
 // 那些是 RFC 5737 文档保留段，已在 IP_ALLOW 里，测不出东西来。
-const realIp = octet(198, 18, 7, 42);
+const realIp = octet(240, 0, 0, 1);
 const port = [105, 56].join('');                // 非默认 SSH 端口
 const user = ['some', 'one'].join('');          // 看起来像真用户名
 const strongPw = ['Correct', 'Horse', 'Battery', 99].join('');  // 纯字母数字的真密码形态
@@ -57,7 +57,7 @@ const SHOULD_BLOCK_PATHS = [
 // 这里的 slug 与后缀都是**虚构值**，不指向任何真实机器
 // （真实那个已经作废，不该再被写进仓库 —— 写进去等于让作废失效）。
 const SHOULD_BLOCK_IDS = [
-    `**三台机器的档案都已建立**。其中音乐服务器（\`${['acme-srv', 'a1b2c3'].join('-')}\`）的档案里有：`,
+    `**三台机器的档案都已建立**。其中音乐服务器（\`${['zzz-srv', 'a1b2c3'].join('-')}\`）的档案里有：`,
     `serverId: "${['vps-hk', '3f2a1b'].join('-')}" 已登记。`,
 ];
 

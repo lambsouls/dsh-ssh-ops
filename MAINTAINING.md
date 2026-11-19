@@ -322,11 +322,12 @@ plugin_manager set_plugin target="include:dsh-ssh-ops" enabled=true
 ## 5. 验证
 
 ```bash
-# 单元与集成（197 项）
+# 单元与集成（215 项）
 node test-host.mjs                # 32 项：加密/脱敏/凭证库/日志/探测解析/工具契约/参数校验
 node test-profile.mjs             # 25 项：档案归一化/增量合并/删除/一致性/渲染/文件边界
 node test-identity.mjs            # 35 项：改名/标签的改动面（重点测「除此之外什么都没变」）
 node test-reassign.mjs            # 19 项：换 serverId 后凭证库与档案是否仍对得上
+node test-history-scan.mjs          # 18 项：历史扫描 + 可利用性分级（真假的判据）
 node test-profile-page.mjs         # 31 项：档案页面内容完整 + HTML 转义（防 XSS）
 node test-ansi.mjs                # 14 项：ANSI 解析（16/256/真彩、跨行继承、SGR 关闭码）
 node test-client.mjs              # 25 项：客户端静态闸门 + 真渲染（假 React + vm 跑组件）
@@ -386,6 +387,38 @@ git grep -n -E '[0-9]{1,3}(\.[0-9]{1,3}){3}' -- .          # IP
 
 **判据一句话**：闸门守「字符串长什么样」，人守「这句话该不该公开」。两件事不能互相替代。
 
+### 6.1.5 历史扫描：修好文件 ≠ 消除泄漏
+
+`verify-remote` 现在会跑 `git log -p` 扫**完整提交历史**。这一步以前是缺的，
+2026-11-19 因此漏过一次：泄露「修好」了、当前文件干净、`verify-remote` 报 OK，
+但 `git log -p` 仍能翻出原文。**任何人 clone 下来 grep 就能看到。**
+
+#### 判据：按「可利用性」分级，不是按「有没有出现过」
+
+历史里本来就有大量「已经修好了」的痕迹。全当 LEAK 会让报告被噪音淹没 ——
+**一个总在喊狼来了的闸门等于没有闸门。** 所以分两级：
+
+| 级别 | 含义 | 例子 |
+|---|---|---|
+| **LEAK** | 仍具可利用性，阻塞 | 真实 IP+端口、**本机现存**的 serverId、token、私钥块 |
+| **NOTE** | 曾公开但不可利用，不阻塞 | 测试夹具、本机路径（环境痕迹）、**已作废**的 serverId、保留段 IP |
+
+#### 真假 serverId 怎么判：对照本机真实数据，不是看名字
+
+这是这条判据里最容易做错的地方，我错误地改了三版：
+
+1. **整行有「服务器」就报** → 误伤严重，连测试夹具自己都进不去；
+2. **静态前缀白名单**（`demo|test|music|n|d|t…`）→ 两头都错：
+   - 太宽：`music-` 在名单里，真实机器叫 `music-server-xxxxxx` 就被**放过**；
+   - 太窄：`music-abc123` 是测试夹具却被判 LEAK，**每次复查都报狼来了**；
+3. **对照 `loadLiveIds()`**（凭证库 + `profiles/` 目录）：本机有 → LEAK，没有 → NOTE。
+
+第 3 版才不用猜。**判据要建立在事实上，而不是建立在「看起来像不像」上。**
+
+#### 与 `reassign-id` 的关系
+
+作废标识之后，`loadObsoleteIds()` 会从档案时间线里读到「serverId 由 X 变更为 Y」，
+把 X 的命中降级为 NOTE —— **作废的效果在扫描器里也是可验证的**，不只是口头说说。
 ### 6.2 万一 serverId 已经泄露了
 
 `force-push` **消不掉**它：GitHub 保留不可达对象，用 SHA 仍能直接访问（实测 200）。

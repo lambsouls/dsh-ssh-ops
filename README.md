@@ -220,12 +220,13 @@ token 形状、SSH 端口、**真实 serverId**、仓库目录里存在运行时
 ## 自测
 
 ```bash
-# 合计 197 项
+# 合计 215 项
 node test-host.mjs       # 32 项：加密/脱敏/凭证库/日志/探测解析/工具契约/参数校验
 node test-profile.mjs    # 25 项：档案归一化/增量合并/删除/一致性/渲染/文件边界
 node test-identity.mjs   # 35 项：改名/标签的改动面（重点测「除此之外什么都没变」）
 node test-reassign.mjs   # 19 项：换 serverId 后凭证库与档案是否仍对得上
 node test-profile-page.mjs # 31 项：档案页面内容完整 + HTML 转义（防 XSS）
+node test-history-scan.mjs # 18 项：历史扫描 + 可利用性分级
 node test-ansi.mjs       # 14 项：ANSI 解析（颜色/256色/真彩/跨行继承）
 node test-client.mjs     # 25 项：客户端静态闸门 + 真渲染（假 React + vm 跑组件）
 node scripts/gate-selftest.mjs  # 16 项：证明发布闸门真能拦、且不误伤合法代码
