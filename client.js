@@ -422,7 +422,7 @@ window.__ModuleLoader__.load({
                 s.tags && s.tags.length ? h('dt', null, 'Tags') : null,
                 s.tags && s.tags.length ? h('dd', null, s.tags.join('、')) : null,
                 notes ? h('dt', null, 'Notes') : null,
-                // 备注常是主人自己写的一长串运维史：截断到两行高度，全貌放 title
+                // 备注常是用户自己写的一长串运维史：截断到两行高度，全貌放 title
                 notes ? h('dd', { className: 'so-notes', title: notes }, notes.length > NOTES_MAX ? `${notes.slice(0, NOTES_MAX)}…` : notes) : null);
 
             return h('div', { className: 'so-srv' }, head,

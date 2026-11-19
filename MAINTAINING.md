@@ -311,7 +311,7 @@ const FIXTURE_PW = 'Pa55word!';
 |---|---|---|
 | `Server accepts key` 之后仍然 `Permission denied`，GitHub 网页显示 key `Never used` | **私钥带密码短语**，非交互场景没人能输入签名 | `ssh-keygen -y -f <key>`，**5 秒内返回**才说明无密码。生成时 `-N` 传空**变量**：`$empty = ''; ssh-keygen -t ed25519 -f <file> -N $empty` |
 | PowerShell 里 `-N '""'` 生成的私钥带密码 | PowerShell 把**引号本身**当成了密码短语 | 同上。这个坑极隐蔽，因为现象指向「key 没加上」 |
-| HTTPS 推送经常 `Connection was reset` | 网络干扰，非权限问题 | 用 SSH（`git@github.com:...`）。实测 SSH 3/3 通，HTTPS 约 1/5 |
+| HTTPS 推送经常 `Connection was reset` | 特定网络环境下 HTTPS 被干扰，非权限问题 | 改用 SSH（`git@github.com:...`）。*注：这是作者在某网络环境下的观测，你的环境未必相同 —— 先判断是网络还是权限* |
 | GitHub API 匿名扫一遍就 403 | 匿名限额 60 次/小时 | `verify-remote` 改用 `git fetch` + `git show` 读本地对象，**零配额** |
 
 ### 远端命令
@@ -380,6 +380,63 @@ const FIXTURE_PW = 'Pa55word!';
 - `render` 决定模型看到什么；`execute` 的返回值才是真实数据
 - 有副作用的工具要在 `description` 里写清楚后果
 
+### 想给**已有**工具加参数（容易漏的一步）
+
+加一个参数要改**三处**，少一处就会报「无效参数（未知字段）」：
+
+| # | 文件 | 改什么 |
+|---|---|---|
+| 1 | `lib/tools.js` | `parameters` 里加字段定义 |
+| 2 | `lib/tools.js` | `execute(args)` 里把它透传给下层 |
+| 3 | `lib/service.js` | `exec({ ... })` 的解构参数里接收它 |
+
+很多参数还要在 `lib/ssh.js` → `lib/ssh_exec.py` 里落地（如果最终要影响远端行为）。
+
+第 3 处最容易漏，因为前两处都在同一个文件里，改完看起来「好了」。
+`index.js` 的 `makeExecutor` 会按 `parameters` 的键名做白名单校验，
+**未声明的字段会被直接拒绝**，所以第 1 处漏了会立刻报错，但第 3 处漏了只会静默失效。
+
+**以加 `dryRun` 为例（只回显命令不执行）：**
+
+```js
+// 1) lib/tools.js —— 声明
+parameters: {
+  serverId: { ...SERVER_ID_SCHEMA, required: true },
+  command: { type: 'string', required: true },
+  dryRun: { type: 'boolean', description: '只显示将要执行的命令，不实际执行。' },
+},
+// 2) lib/tools.js —— 透传
+async execute(args) {
+  return ops.exec({ serverId: args.serverId, command: args.command, dryRun: args.dryRun === true });
+},
+
+// 3) lib/service.js —— 接收
+async function exec({ serverId, command, dryRun = false, ... }) {
+  if (dryRun) {
+    // 不发 SSH，只记一条日志，返回将要执行的命令
+    return { dryRun: true, command, code: 0, stdout: '', stderr: '' };
+  }
+  // ...原有逻辑
+}
+```
+
+### 怎么测「不产生副作用的分支」
+
+`dryRun` 这类分支的测试重点不是「命令跑对了」，而是**「确认它真的没跑」**：
+
+```js
+// test-host.mjs
+ok('dryRun 不发 SSH', async () => {
+  const result = await ops.exec({ serverId, command: 'echo hi', dryRun: true });
+  assert.strictEqual(result.dryRun, true);
+  // 关键：断言 journal 里没有 stream-open（没有真的连过）
+  const streams = ops.journal.snapshot({ limit: 50 }).filter((e) => e.kind === 'stream-open');
+  assert.strictEqual(streams.length, 0, 'dryRun 不该产生连接记录');
+});
+```
+
+**断言「没发生什么」比断言「发生了什么」更能抓住 bug。**
+
 ### 想换 SSH 后端
 
 `lib/ssh.js` 是唯一的桥。只要保住这个契约：
@@ -415,20 +472,25 @@ runRemote({ vaultSecrets, command, timeoutMs, loginShell, color, onEvent })
 
 ---
 
-## 11. 关于同名仓库
+## 11. 关于同名仓库（仅原作者维护本仓库时需要）
 
-GitHub 上另有一个同名项目 `caoyiwei850/dsh-ssh-ops`（更早、star 更多、工具集不同）。
-如果你是从搜索找到这个页面的，注意区分：
+> **fork 之后可以整节删掉。** 这节是维护 `lambsouls/dsh-ssh-ops` 这个**特定仓库**的注意事项，
+> 与代码本身无关。
 
-| | 本项目 | 那个项目 |
+GitHub 上另有一个同名项目 `caoyiwei850/dsh-ssh-ops`（更早、star 更多、工具集不同）：
+
+| | 本仓库 | 那个项目 |
 |---|---|---|
-| 仓库 | `lambsouls/dsh-ssh-ops` | `caoyiwei850/dsh-ssh-ops` |
+| 路径 | `lambsouls/dsh-ssh-ops` | `caoyiwei850/dsh-ssh-ops` |
 | 工具 | `ssh_server_*` / `ssh_app_control` | 含 `sftp_delete` / `ssh_terminal_*` |
 
-`scripts/check-issues.mjs` 会校验 owner，防止看错仓库的 issue。
+**为什么写在这里**：`scripts/check-issues.mjs` 会校验 owner，防止维护者看错仓库的 issue。
+如果你 fork 后继续用这个脚本，把脚本里的 `EXPECTED_OWNER` 改成你自己的账号即可。
 
----
-
+**如果你只是使用者**：忽略这节。
 ## License
 
 MIT。改了随意，出问题自负（见 [LICENSE](LICENSE)）。
+
+
+
