@@ -65,6 +65,7 @@ window.__ModuleLoader__.load({
                 fromOwner: '主人',
                 fromProbe: '实测',
                 fromAgent: '推断',
+                timelineKind: { change: '改', incident: '故', note: '记', decision: '定' },
             },
             en: {
                 title: 'Server ops console',
@@ -103,6 +104,7 @@ window.__ModuleLoader__.load({
                 fromOwner: 'owner',
                 fromProbe: 'probed',
                 fromAgent: 'inferred',
+                timelineKind: { change: 'chg', incident: 'inc', note: 'note', decision: 'dec' },
             },
         };
 
@@ -319,11 +321,12 @@ window.__ModuleLoader__.load({
 .so-prof-item-title { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
 .so-prof-item-detail { color: var(--so-dim); margin-top: 1px; }
 .so-prof-item-impact { color: var(--so-dim); margin-top: 1px; font-style: italic; }
-.so-prof-src { font-size: 9px; border: 1px solid var(--so-line); border-radius: 999px; padding: 0 4px; color: var(--so-dim); flex: none; }
-.so-sev { flex: none; font-size: 8px; line-height: 1.9; color: var(--so-idle); }
-.so-sev--warn { color: var(--so-warn); }
-.so-sev--critical { color: var(--so-bad); }
-.so-sev--info { color: var(--so-dim); }
+.so-prof-src { font-size: 9px; border: 1px solid var(--so-line); border-radius: 999px; padding: 0 4px; color: var(--so-dim); flex: none; white-space: nowrap; }
+.so-sev { flex: none; width: 6px; height: 6px; border-radius: 50%; margin-top: 5px; background: var(--so-idle); }
+.so-sev--warn { background: var(--so-warn); }
+.so-sev--critical { background: var(--so-bad); box-shadow: 0 0 0 2px color-mix(in srgb, var(--so-bad) 22%, transparent); }
+.so-sev--info { background: var(--so-line2); }
+.so-sev--note { background: var(--so-idle); }
 .so-prof-ports { display: flex; flex-direction: column; gap: 3px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10.5px; }
 .so-prof-port { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
 .so-prof-port-n { color: var(--so-accent); }
@@ -335,6 +338,10 @@ window.__ModuleLoader__.load({
 .so-prof-tl { display: flex; flex-direction: column; gap: 2px; }
 .so-prof-tl-row { display: flex; gap: 6px; font-size: 10px; line-height: 1.5; }
 .so-prof-tl-at { color: var(--so-dim); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; flex: none; }
+.so-prof-tl-kind { flex: none; color: var(--so-dim); font-size: 9px; border: 1px solid var(--so-line); border-radius: 3px; padding: 0 3px; white-space: nowrap; }
+.so-prof-tl-kind--incident { color: var(--so-bad); border-color: var(--so-bad); }
+.so-prof-tl-kind--decision { color: var(--so-accent); border-color: var(--so-accent); }
+.so-prof-tl-kind--change { color: var(--so-warn); border-color: var(--so-warn); }
 .so-prof-tl-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .so-prof-foot { margin-top: 6px; padding-top: 5px; border-top: 1px dashed var(--so-line); font-size: 9.5px; color: var(--so-dim); }
 .so-kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 11px; margin: 0 0 8px; }
@@ -533,6 +540,9 @@ window.__ModuleLoader__.load({
                             h('span', { className: 'so-prof-port-arrow' }, '→'),
                             h('span', { className: 'so-prof-port-n' }, m.internal ? `:${m.internal}` : '—'),
                             h('span', { className: 'so-prof-port-app' }, m.app ?? ''),
+                            // 端口映射尤其要标来源：agent（推断）的映射是线索不是事实，
+                            // 不标出来就会被当成「主人确认过的对外地址」用出去。
+                            h('span', { className: 'so-prof-src' }, sourceMark(m.source)),
                             m.note ? h('span', { className: 'so-prof-port-note' }, m.note) : null))));
                 }
                 if (detail.constraints.length) {
@@ -560,11 +570,13 @@ window.__ModuleLoader__.load({
                 }
                 if (detail.timeline.length) {
                     const recent = detail.timeline.slice(-6);
+                    const KIND_MARK = t.timelineKind ?? {};
                     body.push(h('div', { className: 'so-prof-h' }, `${t.timeline} · ${detail.timeline.length}`));
                     body.push(h('div', { className: 'so-prof-tl' },
                         recent.map((x, i) => h('div', { className: 'so-prof-tl-row', key: i },
                             h('span', { className: 'so-prof-tl-at' }, String(x.at).slice(0, 10)),
-                            h('span', { className: 'so-prof-tl-text' }, x.text)))));
+                            h('span', { className: `so-prof-tl-kind so-prof-tl-kind--${x.kind || 'note'}` }, KIND_MARK[x.kind] ?? ''),
+                            h('span', { className: 'so-prof-tl-text', title: x.text }, x.text)))));
                 }
             } else if (!error) {
                 body.push(h('div', { className: 'so-prof-loading' }, t.loading));
@@ -851,7 +863,7 @@ window.__ModuleLoader__.load({
             }
         }
 
-        return { inject, apply, __internals: { OpsBody, Panel, RightTab, ServersView, ConsoleView, CSS, PANEL_ID, TAB_ID, TAB_KIND, parseAnsi } };
+        return { inject, apply, __internals: { OpsBody, Panel, RightTab, ServersView, ConsoleView, ServerRow, profileSection, AppList, CSS, PANEL_ID, TAB_ID, TAB_KIND, parseAnsi } };
     },
 });
 
