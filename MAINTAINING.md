@@ -76,6 +76,54 @@ return { stdout: redact(stripAnsi(stdout)) };       // 模型：去色
 
 **顺序很重要**：如果抓取时就 strip 掉，面板就再也没法显示颜色了。**分叉点必须尽量靠后。**
 
+### 1.4 为什么档案是明文、且与凭证库分开（`lib/profile.js`）
+
+凭证回答「怎么连」，探测回答「此刻有什么」，档案回答「这台机器有什么坑」。
+第三类知识的特点是：**机器内部查不到**（共享 IP 的端口映射在接入侧、数据在网盘、
+哪个服务是别人的），丢了就再也想不起来。
+
+所以三条设计决定，改之前先理解：
+
+| 决定 | 理由 | 别改成什么 |
+|---|---|---|
+| **明文存盘** | 出问题第一件事是 `grep` 档案，不是「解密再翻」 | 别顺手给它加密 —— 它不含密码，加密只会让排查变难 |
+| **与 vault 分目录、按 serverId 解耦** | 改密码/换认证不该丢档案 | 别把档案塞进 `servers.json` 的条目里 |
+| **每条事实带 `source`** | 分清「主人说的」「实测的」「模型推断的」，冲突时知道该信谁 | 别把 `source` 做成可选或默认 `owner` |
+
+**`source` 的默认值是 `agent`，这是刻意的**：模型自己写的东西默认最低权威，
+必须有明确依据（或主人明说）才能标 `probe` / `owner`。实现上分两段：
+
+```js
+// 归一化阶段：没提供的字段留 null（表示「本次没提供」），不是直接填默认值
+source: oneOf(raw?.source, SOURCES, null),
+
+// 落盘前 finalize：null 才补默认值
+p.traits = p.traits.map((t) => ({ ...t, source: t.source ?? 'agent' }));
+```
+
+**为什么不能合成一步**：如果归一化时就填默认值，那么「只更新 impact 字段」的调用
+会带着默认的 `source: 'agent'` 一起合并进去，把原有的 `source: 'owner'` 悄悄降级。
+这是个很容易复发的 bug（本项目自测里就抓到过一次）。
+
+同理还有 `mergeItems` 的三条规则（按 id 合并不整体替换、null 不覆盖已有值、
+无 id 无标题的条目丢弃）—— 都是为了「只改一个字段不能弄坏别的字段」。
+**档案的价值全在积累，一次误覆盖就把积累清零了。**
+
+### 1.5 档案与探测冲突时不要自动改档案
+
+`discoverApps` 会顺带做一次漂移检查（`profileDrift`），但**只报告、不写入**：
+
+```js
+const drift = profiles.exists(serverId) ? profileDrift(profiles.get(serverId), parsed) : null;
+```
+
+档案是**知识**，探测是**状态**。两者对不上时，「机器被别人动过」和「我们记错了」
+的处理方式完全相反，必须让人判断。所以 `ssh_server_env` 的渲染里会写
+「档案与实测有出入（不要自动改档案，先确认是谁动过这台机器）」。
+
+**如果你想让某个自动发现行为顺手更新档案**：先问自己「这条差异有没有可能
+是别人改的」，答案是「有可能」就不要自动写。
+
 ---
 
 ## 2. 代码地图
@@ -87,13 +135,14 @@ lib/
   paths.js          ★ 数据落点，唯一真源
   crypto.js         AES-256-GCM 封/解
   vault.js          凭证库（元信息明文 + secrets 密文）
+  profile.js        ★ 服务器档案（每台机器独有的运维知识，明文）
   redact.js         脱敏（已知值 + 模式兜底）
   journal.js        操作日志（环形缓冲 + NDJSON）
   ssh.js            Node → Python 桥（spawn + NDJSON 事件流）
   ssh_exec.py       paramiko 执行器
   probe.js          环境/应用探测脚本与解析
-  service.js        编排层：exec / probe / discoverApps / appAction
-  tools.js          6 只工具定义
+  service.js        编排层：exec / probe / discoverApps / appAction / 档案
+  tools.js          9 只工具定义
   ansi.js           ANSI 解析（模型侧 strip / 面板侧 parse）
   gate-rules.mjs    ★ 闸门判据，本地与远端共用
   http.js           REST 小工具
@@ -214,8 +263,9 @@ plugin_manager set_plugin target="include:dsh-ssh-ops" enabled=true
 ## 5. 验证
 
 ```bash
-# 单元与集成（76 项）
+# 单元与集成（83 项）
 node test-host.mjs                # 25 项：加密/脱敏/凭证库/日志/探测解析/工具契约/参数校验
+node test-profile.mjs             # 24 项：档案归一化/增量合并/删除/一致性/渲染/文件边界
 node test-ansi.mjs                # 14 项：ANSI 解析（16/256/真彩、跨行继承、SGR 关闭码）
 node test-client.mjs              # 11 项：客户端静态闸门（经典脚本/黑底/主题令牌）
 node scripts/gate-selftest.mjs    #  9 项：闸门对抗性自测
@@ -299,6 +349,9 @@ const FIXTURE_PW = 'Pa55word!';
 
 **不要为了让测试通过而给闸门加白名单。** 给「假的」开口子，它也就抓不住「真的」了。
 
+> 这条不是理论：写档案模块的自测时，泄漏检测用例里写了个字面量假密码，
+> `gate-selftest` 当场变红。**闸门是对的，测试是错的** —— 改成运行时拼接即可。
+
 ---
 
 ## 7. 踩过的坑
@@ -348,8 +401,16 @@ const FIXTURE_PW = 'Pa55word!';
   vault/servers.json   元信息明文 + secrets 密文（AES-256-GCM）
   vault/master.key     32 字节主密钥
   vault/keys/*.pem     私钥临时文件（仅密钥认证时）
+  profiles/<id>.json   服务器档案（**明文**，不含任何凭证）
   logs/ops-console.ndjson  操作日志（已脱敏但含真实 IP，故不进仓库）
 ```
+
+**档案为什么可以明文**：它记的是「这台机器有什么脾气」，不含密码/私钥。
+加密它只会让「出问题时翻档案」这一步变难，换不来实质安全 ——
+能读你用户目录的攻击者本来就能读 `master.key`。
+
+**但要守住一条**：档案里**永远不写密码、私钥、passphrase**。
+`ssh_server_profile_audit` 会扫档案原文，发现 `password` 字段或 PEM 块就报出来。
 
 ### 别夸大这条边界
 
@@ -371,6 +432,23 @@ const FIXTURE_PW = 'Pa55word!';
 ---
 
 ## 9. 二次开发方向
+
+### 想加档案字段
+
+档案的字段分两层：**标量**（`summary` / `role`）和**列表**（`traits` / `portMap` / `constraints` / `runbooks` / `timeline` / `openQuestions`）。
+加一个**列表**字段要改四处：
+
+| # | 文件 | 改什么 |
+|---|---|---|
+| 1 | `lib/profile.js` `normalizeProfile` | 加归一化（宽进：坏数据丢弃而不是抛错） |
+| 2 | `lib/profile.js` `applyPatch` + `finalize` | 加合并规则 + 默认值（默认值一定要在 finalize 里补，理由见 §1.4） |
+| 3 | `lib/profile.js` `renderProfile` | 加渲染（模型和面板看到的是同一段话） |
+| 4 | `lib/tools.js` `PROFILE_ITEM_SCHEMA` + 工具 `parameters` | 加参数形状，否则 `makeExecutor` 会拒绝该字段 |
+
+加**标量**字段只需 1–4 中除合并外的部分（`applyPatch` 里一行 `if (p.x !== undefined) next.x = str(...)`）。
+
+**不要**给列表字段用「整体替换」语义：档案靠反复追加积累，一次替换就把历史清了。
+用 `mergeItems`，它已经处理好了「按 id 合并 / null 不覆盖 / 空条目丢弃」。
 
 ### 想加工具
 
@@ -469,6 +547,8 @@ runRemote({ vaultSecrets, command, timeoutMs, loginShell, color, onEvent })
 2. **密钥认证端到端**：目前只测了「假私钥能入库+能脱敏」，没真用密钥连过一台机器
 3. **DPAPI / 系统密钥库**：把主密钥保护提升到「同机其他账户也读不出」
 4. **composeDir 自动推断**：`ssh_app_control` 对 compose 项目目前需要显式传目录
+5. **档案模板**：新机器建档全空，可以按「玩家家用机 / 共享 IP 云机 / 内网 NAS」给几套骨架
+6. **档案导出/导入**：换机器时档案要能整体搬走（目前是文件，手工拷也行）
 
 ---
 

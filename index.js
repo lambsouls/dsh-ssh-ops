@@ -14,7 +14,7 @@
 import { buildTools } from './lib/tools.js';
 import { createOpsService } from './lib/service.js';
 import { createRedactor } from './lib/redact.js';
-import { defaultVaultDir, defaultLogDir } from './lib/paths.js';
+import { defaultVaultDir, defaultLogDir, defaultProfileDir } from './lib/paths.js';
 import { registerServerApi } from './lib/server-api.js';
 
 export const name = 'dsh-ssh-ops';
@@ -25,6 +25,7 @@ export const inject = ['tools'];
 const DEFAULTS = {
     vaultDir: defaultVaultDir(),
     logDir: defaultLogDir(),
+    profileDir: defaultProfileDir(),
     pythonPath: null,
     defaultTimeoutMs: 120000,
     maxOutputBytes: 262144,
@@ -42,7 +43,15 @@ const DISCIPLINE = `【运维纪律（dsh-ssh-ops 服务器运维台）】
 5. 失败时按工具返回的 failure.kind 说人话（auth=认证被拒、network=网络不通、hostkey=主机密钥变更、
    timeout=超时），给出下一步可执行的排查动作，不要笼统说「连不上」。
 6. 应用清单以 ssh_server_env 的发现结果为准；ssh_app_control 只对已登记的应用生效，
-   找不到就先发现，不要猜服务名。`;
+   找不到就先发现，不要猜服务名。
+【服务器档案（每台机器一份独立知识）】
+7. 动手前先 ssh_server_profile 读这台机器的档案：共享 IP、对外端口与内部端口不对应、
+   出网受限、数据在网盘、哪个服务是别人的——这些**机器内部查不到**，只能靠档案。
+8. 档案里没有的独有特征，不要靠扫描或猜测去补：直接问用户，问到的写进档案（source=owner）。
+9. **不要为了知道对外端口而扫描公网端口**。共享 IP 上盲扫会给同 IP 的其他租户和接入侧留下大量
+   连接痕迹，可能触发对方告警/风控。需要对外地址就问用户，拿到后记进档案的 portMap。
+10. 学到一条容易忘的事实（实测行为、踩过的坑、处置步骤）就 ssh_server_profile_save 写进档案；
+    自己推断的标 source=agent，不许冒充 owner；不确定的写进 openQuestions 去问，不要编。`;
 
 /** 把作者的属性表编译成宿主接受的原始 JSON Schema（等价于 defineTool 的参数编译）。 */
 function toParameterSchema(properties = {}) {
@@ -96,6 +105,7 @@ export function apply(ctx, config = {}) {
     const ops = createOpsService({
         vaultDir: resolved.vaultDir,
         logDir: resolved.logDir,
+        profileDir: resolved.profileDir,
         config: resolved,
         redactor,
     });
@@ -122,7 +132,7 @@ export function apply(ctx, config = {}) {
 
     registerServerApi(ctx, ops);
 
-    ctx.logger?.info?.(`[dsh-ssh-ops] 就绪：凭证库 ${resolved.vaultDir}（${known} 台）、Python ${ops.python}`);
+    ctx.logger?.info?.(`[dsh-ssh-ops] 就绪：凭证库 ${resolved.vaultDir}（${known} 台）、档案 ${resolved.profileDir}、Python ${ops.python}`);
 }
 
 export { DISCIPLINE };

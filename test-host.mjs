@@ -171,12 +171,17 @@ console.log('[6] tools');
 const ops = createOpsService({
     vaultDir: path.join(tmp, 'vault2'),
     logDir: path.join(tmp, 'logs2'),
+    profileDir: path.join(tmp, 'profiles2'),
     config: { pythonPath: null, defaultTimeoutMs: 5000, maxOutputBytes: 4096 },
     redactor,
 });
 const tools = new Map(buildTools(ops).map((t) => [t.name, t]));
 ok('工具清单齐全', () => {
-    for (const n of ['ssh_server_list', 'ssh_server_register', 'ssh_server_env', 'ssh_server_exec', 'ssh_app_control', 'ssh_server_forget']) {
+    for (const n of [
+        'ssh_server_list', 'ssh_server_register', 'ssh_server_env', 'ssh_server_exec',
+        'ssh_app_control', 'ssh_server_forget',
+        'ssh_server_profile', 'ssh_server_profile_save', 'ssh_server_profile_audit',
+    ]) {
         assert.ok(tools.has(n), `缺工具 ${n}`);
     }
 });
@@ -246,6 +251,74 @@ await (async () => {
     assert.ok(ops.vault.list().some((s) => s.id === demo.id), '被拒绝的删除不该真的删掉');
     passed += 1;
     console.log('  ✓ 拒绝后数据仍在');
+})();
+
+console.log('[8] 档案工具端到端（走真实 tools → service → profile）');
+await (async () => {
+    const demo = ops.vault.list().find((s) => s.user === 'demo');
+    const save = tools.get('ssh_server_profile_save').execute;
+    const read = tools.get('ssh_server_profile').execute;
+    const audit = tools.get('ssh_server_profile_audit').execute;
+
+    // ① 没档案时读：不报错，但要明说没有
+    const empty = await read({ serverId: demo.id });
+    assert.strictEqual(empty.hasProfile, false, '新登记机器不该凭空有档案');
+    passed += 1;
+    console.log('  ✓ 无档案时 get 返回 hasProfile=false');
+
+    // ② 写入
+    const saved = await save({
+        serverId: demo.id,
+        summary: '自测用例机',
+        traits: [{ title: '与别人共享 IP', source: 'owner', severity: 'critical' }],
+        portMap: [{ public: 10207, internal: 5244, app: 'openlist' }],
+        constraints: [{ text: '不要扫描端口' }],
+        openQuestions: ['对外端口是多少？'],
+    });
+    assert.strictEqual(saved.isNew, true);
+    assert.strictEqual(saved.profile.traits[0].source, 'owner');
+    passed += 1;
+    console.log('  ✓ 建档成功，source=owner 被保留');
+
+    // ③ 增量更新不降级 source（本轮修过的那个 bug 的回归用例）
+    const updated = await save({ serverId: demo.id, traits: [{ id: saved.profile.traits[0].id, impact: '不能盲扫' }] });
+    assert.strictEqual(updated.isNew, false);
+    assert.strictEqual(updated.profile.traits[0].source, 'owner', '部分更新不该把 owner 降级成 agent');
+    assert.strictEqual(updated.profile.traits[0].impact, '不能盲扫');
+    passed += 1;
+    console.log('  ✓ 部分更新保住原 source（回归）');
+
+    // ④ 读回来是完整渲染
+    const readBack = await read({ serverId: demo.id });
+    assert.strictEqual(readBack.hasProfile, true);
+    const text = tools.get('ssh_server_profile').render({}, readBack)[0].text;
+    assert.ok(text.includes(':10207 → :5244'), '渲染应含端口映射');
+    assert.ok(text.includes('不要扫描端口'), '渲染应含约束');
+    passed += 1;
+    console.log('  ✓ 读回并渲染出端口映射与约束');
+
+    // ⑤ 清单里带档案摘要
+    const listed = tools.get('ssh_server_list').execute;
+    const listValue = await listed({});
+    const row = listValue.servers.find((s) => s.id === demo.id);
+    assert.ok(row.profile, '清单里应带档案摘要');
+    assert.strictEqual(row.profile.traitCount, 1);
+    passed += 1;
+    console.log('  ✓ ssh_server_list 带出档案摘要');
+
+    // ⑥ 体检：这台有档案，不该报缺
+    const auditValue = await audit({});
+    assert.ok(!auditValue.missingProfile.some((s) => s.id === demo.id));
+    assert.strictEqual(auditValue.leaks.length, 0, '档案里不该有凭证');
+    passed += 1;
+    console.log('  ✓ 体检不误报、不认为有凭证泄漏');
+
+    // ⑦ 删除服务器后档案变成孤儿（档案不该被一起删掉 —— 机器可能是换 ID 重登记）
+    ops.vault.remove(demo.id);
+    const afterForget = await audit({});
+    assert.ok(afterForget.orphanProfile.length >= 1, '删掉凭证后档案应报孤儿');
+    passed += 1;
+    console.log('  ✓ 删凭证后档案成为孤儿（保留而非静默删除）');
 })();
 
 console.log(`\n通过 ${passed} 项${process.exitCode ? '，有失败' : '，全部通过'}`);

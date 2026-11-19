@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
         const PANEL_ID = 'dsh-ssh-ops';
         const TAB_ID = 'dsh-ssh-ops';
         const TAB_KIND = 'ssh-ops';
-        const PLUGIN_VERSION = '0.3.0';
+        const PLUGIN_VERSION = '0.4.0';
 
         // ── 文案 ─────────────────────────────────────────────────────────
         const COPY = {
@@ -53,6 +53,18 @@ window.__ModuleLoader__.load({
                 follow: '跟随',
                 following: '跟随中',
                 wrap: '折行',
+                profile: '档案',
+                noProfile: '这台机器还没有档案（独有特征只能靠猜）',
+                traits: '专属特征',
+                portMap: '对外端口 → 内部',
+                constraints: '硬约束',
+                runbooks: '常用处置',
+                timeline: '时间线',
+                openQuestions: '待确认',
+                profileUpdated: '档案更新',
+                fromOwner: '主人',
+                fromProbe: '实测',
+                fromAgent: '推断',
             },
             en: {
                 title: 'Server ops console',
@@ -79,6 +91,18 @@ window.__ModuleLoader__.load({
                 follow: 'Follow',
                 following: 'Following',
                 wrap: 'Wrap',
+                profile: 'Profile',
+                noProfile: 'No profile yet — this host\'s quirks are being guessed',
+                traits: 'Traits',
+                portMap: 'Public → internal',
+                constraints: 'Constraints',
+                runbooks: 'Runbooks',
+                timeline: 'Timeline',
+                openQuestions: 'Open questions',
+                profileUpdated: 'Profile updated',
+                fromOwner: 'owner',
+                fromProbe: 'probed',
+                fromAgent: 'inferred',
             },
         };
 
@@ -279,7 +303,40 @@ window.__ModuleLoader__.load({
   padding: 0 6px; color: var(--so-dim); white-space: nowrap; flex: none;
 }
 .so-badge--accent { border-color: var(--so-accent); color: var(--so-accent); }
+.so-badge--profile { border-color: var(--so-line2); color: var(--so-text); }
 .so-srv-body { border-top: 1px solid var(--so-line); padding: 8px 10px 10px; background: var(--so-bg); }
+
+/* 档案区 */
+.so-prof { border: 1px solid var(--so-line); border-radius: 7px; background: var(--so-surface); padding: 7px 9px; margin-bottom: 8px; }
+.so-prof--empty { border-style: dashed; color: var(--so-dim); font-size: 10.5px; line-height: 1.5; }
+.so-prof-summary { font-size: 11px; line-height: 1.55; margin-bottom: 6px; }
+.so-prof-loading { color: var(--so-dim); font-size: 10.5px; }
+.so-prof-h { font-size: 10px; color: var(--so-dim); text-transform: uppercase; letter-spacing: .04em; margin: 7px 0 4px; }
+.so-prof-h:first-child { margin-top: 0; }
+.so-prof-list { display: flex; flex-direction: column; gap: 4px; }
+.so-prof-item { display: flex; gap: 6px; font-size: 10.5px; line-height: 1.5; }
+.so-prof-item-main { min-width: 0; flex: 1 1 auto; }
+.so-prof-item-title { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+.so-prof-item-detail { color: var(--so-dim); margin-top: 1px; }
+.so-prof-item-impact { color: var(--so-dim); margin-top: 1px; font-style: italic; }
+.so-prof-src { font-size: 9px; border: 1px solid var(--so-line); border-radius: 999px; padding: 0 4px; color: var(--so-dim); flex: none; }
+.so-sev { flex: none; font-size: 8px; line-height: 1.9; color: var(--so-idle); }
+.so-sev--warn { color: var(--so-warn); }
+.so-sev--critical { color: var(--so-bad); }
+.so-sev--info { color: var(--so-dim); }
+.so-prof-ports { display: flex; flex-direction: column; gap: 3px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10.5px; }
+.so-prof-port { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+.so-prof-port-n { color: var(--so-accent); }
+.so-prof-port-arrow { color: var(--so-dim); }
+.so-prof-port-app { font-family: inherit; }
+.so-prof-port-note { color: var(--so-dim); font-size: 10px; }
+.so-prof-steps { margin: 2px 0 0; padding-left: 16px; color: var(--so-dim); }
+.so-prof-q { font-size: 10.5px; color: var(--so-warn); line-height: 1.5; }
+.so-prof-tl { display: flex; flex-direction: column; gap: 2px; }
+.so-prof-tl-row { display: flex; gap: 6px; font-size: 10px; line-height: 1.5; }
+.so-prof-tl-at { color: var(--so-dim); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; flex: none; }
+.so-prof-tl-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.so-prof-foot { margin-top: 6px; padding-top: 5px; border-top: 1px dashed var(--so-line); font-size: 9.5px; color: var(--so-dim); }
 .so-kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 11px; margin: 0 0 8px; }
 .so-kv dt { color: var(--so-dim); }
 .so-kv dd { margin: 0; word-break: break-all; }
@@ -392,9 +449,21 @@ window.__ModuleLoader__.load({
 
         function ServerRow({ s, t }) {
             const [open, setOpen] = useState(false);
+            const [detail, setDetail] = useState(null);
+            const [detailError, setDetailError] = useState(null);
             const toggle = () => setOpen((v) => !v);
             const stateClass = s.reachable === true ? 'so-dot so-dot--up' : s.reachable === false ? 'so-dot so-dot--down' : 'so-dot';
             const stateTitle = s.reachable === true ? 'reachable' : s.reachable === false ? 'unreachable' : t.unknown;
+
+            // 展开时才去取完整档案：清单只带摘要，整份档案（含全部时间线）按需拉。
+            useEffect(() => {
+                if (!open || detail || !s.profile) return;
+                let cancelled = false;
+                api(`/servers/${encodeURIComponent(s.id)}`)
+                    .then((v) => { if (!cancelled) setDetail(v.profile ?? null); })
+                    .catch((e) => { if (!cancelled) setDetailError(String(e?.message ?? e)); });
+                return () => { cancelled = true; };
+            }, [open, detail, s.id, s.profile]);
 
             const head = h('div', {
                 className: 'so-srv-head',
@@ -407,6 +476,7 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'so-srv-main' },
                     h('div', { className: 'so-srv-name' }, s.name),
                     h('div', { className: 'so-srv-addr' }, `${s.user}@${s.host}:${s.port}`)),
+                s.profile ? h('span', { className: 'so-badge so-badge--profile', title: t.profile }, `▣ ${t.profile}`) : null,
                 h('span', { className: 'so-badge so-badge--accent' }, `${s.appCount} ${t.apps}`),
                 s.systemAppCount ? h('span', { className: 'so-badge' }, `+${s.systemAppCount}`) : null);
 
@@ -426,7 +496,84 @@ window.__ModuleLoader__.load({
                 notes ? h('dd', { className: 'so-notes', title: notes }, notes.length > NOTES_MAX ? `${notes.slice(0, NOTES_MAX)}…` : notes) : null);
 
             return h('div', { className: 'so-srv' }, head,
-                h('div', { className: 'so-srv-body' }, kv, h(AppList, { apps: s.apps, t })));
+                h('div', { className: 'so-srv-body' },
+                    profileSection(s, detail, detailError, t),
+                    kv,
+                    h(AppList, { apps: s.apps, t })));
+        }
+
+        /** 档案区：面板只读，只把档案里的知识摊开给人看。 */
+        function profileSection(s, detail, error, t) {
+            if (!s.profile) return h('div', { className: 'so-prof so-prof--empty' }, t.noProfile);
+            const sourceMark = (src) => (src === 'owner' ? t.fromOwner : src === 'probe' ? t.fromProbe : t.fromAgent);
+            const severityClass = (sev) => `so-sev so-sev--${sev || 'note'}`;
+            const body = [];
+
+            if (s.profile.summary) body.push(h('div', { className: 'so-prof-summary' }, s.profile.summary));
+            if (error) body.push(h('div', { className: 'so-error' }, error));
+
+            if (detail) {
+                if (detail.traits.length) {
+                    body.push(h('div', { className: 'so-prof-h' }, `${t.traits} · ${detail.traits.length}`));
+                    body.push(h('div', { className: 'so-prof-list' },
+                        detail.traits.map((x) => h('div', { className: 'so-prof-item', key: x.id },
+                            h('span', { className: severityClass(x.severity), title: x.severity }, '●'),
+                            h('div', { className: 'so-prof-item-main' },
+                                h('div', { className: 'so-prof-item-title' },
+                                    x.title,
+                                    h('span', { className: 'so-prof-src' }, sourceMark(x.source))),
+                                x.detail ? h('div', { className: 'so-prof-item-detail' }, x.detail) : null,
+                                x.impact ? h('div', { className: 'so-prof-item-impact' }, `→ ${x.impact}`) : null)))));
+                }
+                if (detail.portMap.length) {
+                    body.push(h('div', { className: 'so-prof-h' }, t.portMap));
+                    body.push(h('div', { className: 'so-prof-ports' },
+                        detail.portMap.map((m) => h('div', { className: 'so-prof-port', key: m.id },
+                            h('span', { className: 'so-prof-port-n' }, m.public ? `:${m.public}` : '—'),
+                            h('span', { className: 'so-prof-port-arrow' }, '→'),
+                            h('span', { className: 'so-prof-port-n' }, m.internal ? `:${m.internal}` : '—'),
+                            h('span', { className: 'so-prof-port-app' }, m.app ?? ''),
+                            m.note ? h('span', { className: 'so-prof-port-note' }, m.note) : null))));
+                }
+                if (detail.constraints.length) {
+                    body.push(h('div', { className: 'so-prof-h' }, `${t.constraints} · ${detail.constraints.length}`));
+                    body.push(h('div', { className: 'so-prof-list' },
+                        detail.constraints.map((c) => h('div', { className: 'so-prof-item', key: c.id },
+                            h('span', { className: severityClass(c.severity) }, '●'),
+                            h('div', { className: 'so-prof-item-main' },
+                                h('div', { className: 'so-prof-item-title' }, c.text,
+                                    h('span', { className: 'so-prof-src' }, sourceMark(c.source))))))));
+                }
+                if (detail.runbooks.length) {
+                    body.push(h('div', { className: 'so-prof-h' }, `${t.runbooks} · ${detail.runbooks.length}`));
+                    body.push(h('div', { className: 'so-prof-list' },
+                        detail.runbooks.map((r) => h('div', { className: 'so-prof-item', key: r.id },
+                            h('div', { className: 'so-prof-item-main' },
+                                h('div', { className: 'so-prof-item-title' }, r.name,
+                                    r.when ? h('span', { className: 'so-prof-src' }, r.when) : null),
+                                h('ol', { className: 'so-prof-steps' }, r.steps.map((st, i) => h('li', { key: i }, st))))))));
+                }
+                if (detail.openQuestions.length) {
+                    body.push(h('div', { className: 'so-prof-h' }, `${t.openQuestions} · ${detail.openQuestions.length}`));
+                    body.push(h('div', { className: 'so-prof-list' },
+                        detail.openQuestions.map((q, i) => h('div', { className: 'so-prof-q', key: i }, `？ ${q}`))));
+                }
+                if (detail.timeline.length) {
+                    const recent = detail.timeline.slice(-6);
+                    body.push(h('div', { className: 'so-prof-h' }, `${t.timeline} · ${detail.timeline.length}`));
+                    body.push(h('div', { className: 'so-prof-tl' },
+                        recent.map((x, i) => h('div', { className: 'so-prof-tl-row', key: i },
+                            h('span', { className: 'so-prof-tl-at' }, String(x.at).slice(0, 10)),
+                            h('span', { className: 'so-prof-tl-text' }, x.text)))));
+                }
+            } else if (!error) {
+                body.push(h('div', { className: 'so-prof-loading' }, t.loading));
+            }
+
+            body.push(h('div', { className: 'so-prof-foot' },
+                `${t.profileUpdated} ${String(s.profile.updatedAt ?? '').slice(0, 16).replace('T', ' ')}`));
+
+            return h('div', { className: 'so-prof' }, ...body);
         }
 
         function ServersView({ data, loading, error, t }) {
