@@ -180,32 +180,74 @@ ok('工具清单齐全', () => {
         assert.ok(tools.has(n), `缺工具 ${n}`);
     }
 });
-ok('未知参数被拒', async () => {});
+
+// 参数校验在 index.js 的 makeExecutor 里（工具定义本身不校验），
+// 所以这里直接构造一个最小 ctx，把真插件装起来测——测假的是没有意义的。
+console.log('[6b] 参数校验（走 index.js 的真实 makeExecutor）');
+const { apply: applyPlugin } = await import('./index.js');
+const registered = new Map();
+const fakeCtx = {
+    effect: (fn) => { const off = fn(); return typeof off === 'function' ? off : () => {}; },
+    get: () => undefined,
+    logger: { info: () => {}, warn: () => {} },
+    tools: { register: (def) => { registered.set(def.name, def); return () => {}; } },
+    inject: () => () => {},
+};
+applyPlugin(fakeCtx, { vaultDir: path.join(tmp, 'vault-fake'), logDir: path.join(tmp, 'logs-fake') });
+
 await (async () => {
+    const exec = registered.get('ssh_server_register').execute;
+    // ① 缺必填字段
     try {
-        // 模拟宿主 makeExecutor 的校验路径由 index.js 提供，这里直接验证底层行为
-        await tools.get('ssh_server_register').execute({ host: '1.2.3.4' });
+        await exec({ host: '10.0.0.1' });
         console.error('  ✗ 缺 user 时应报错');
         process.exitCode = 1;
     } catch (error) {
-        assert.ok(String(error.message).includes('user'));
-        passed++;
+        assert.ok(String(error.message).includes('user'), `报错文案没提到 user：${error.message}`);
+        passed += 1;
         console.log('  ✓ 缺必填字段报错');
+    }
+    // ② 未知字段
+    try {
+        await exec({ host: '10.0.0.1', user: 'u', nonsense: true });
+        console.error('  ✗ 未知字段应报错');
+        process.exitCode = 1;
+    } catch (error) {
+        assert.ok(String(error.message).includes('nonsense'), `报错文案没提到 nonsense：${error.message}`);
+        passed += 1;
+        console.log('  ✓ 未知字段被拒');
     }
 })();
 
 console.log('[7] forget 需要 confirm');
-const ops2 = createOpsService({
-    vaultDir: path.join(tmp, 'vault3'), logDir: path.join(tmp, 'logs3'),
-    config: { pythonPath: null, defaultTimeoutMs: 5000, maxOutputBytes: 4096 }, redactor,
-});
+// 必须用**同一个** service 实例：tools 是从 ops 构建的，
+// 另建一个 ops2 只会得到空凭证库 —— 这正是这条测试以前「看起来通过、其实没测」的原因。
 const reg = tools.get('ssh_server_register');
-await reg.execute({ host: '127.0.0.1', user: 'demo', name: '本地演示', authType: 'password', password: 'demo-pass-123' });
-const listTool = tools.get('ssh_server_list');
-const listed = await listTool.execute({});
-ok('登记后出现在清单里', () => {
-    assert.strictEqual(listed.count, 2 - 1); // 上一段可能已写入 vault2，这里只看 vault3 之外的实例
+const before = ops.vault.list().length;
+await reg.execute({ host: '127.0.0.1', user: 'demo', name: '本地演示', authType: 'password', password: FIXTURE_PW });
+const listed = ops.vault.list();
+ok('登记后出现在同一实例的清单里', () => {
+    assert.strictEqual(listed.length, before + 1, `期望 ${before + 1} 台，实际 ${listed.length} 台`);
+    assert.ok(listed.find((s) => s.user === 'demo'), '没找到刚登记的 demo');
 });
+
+await (async () => {
+    const demo = ops.vault.list().find((s) => s.user === 'demo');
+    const forget = tools.get('ssh_server_forget').execute;
+    try {
+        await forget({ serverId: demo.id, confirm: false });
+        console.error('  ✗ confirm=false 时应拒绝删除');
+        process.exitCode = 1;
+    } catch (error) {
+        assert.ok(String(error.message).includes('confirm'), error.message);
+        passed += 1;
+        console.log('  ✓ confirm=false 拒绝删除');
+    }
+    assert.ok(ops.vault.list().some((s) => s.id === demo.id), '被拒绝的删除不该真的删掉');
+    passed += 1;
+    console.log('  ✓ 拒绝后数据仍在');
+})();
+
 console.log(`\n通过 ${passed} 项${process.exitCode ? '，有失败' : '，全部通过'}`);
 fs.rmSync(tmp, { recursive: true, force: true });
 

@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
         const PANEL_ID = 'dsh-ssh-ops';
         const TAB_ID = 'dsh-ssh-ops';
         const TAB_KIND = 'ssh-ops';
-        const PLUGIN_VERSION = '0.2.0';
+        const PLUGIN_VERSION = '0.3.0';
 
         // ── 文案 ─────────────────────────────────────────────────────────
         const COPY = {
@@ -707,3 +707,4 @@ window.__ModuleLoader__.load({
         return { inject, apply, __internals: { OpsBody, Panel, RightTab, ServersView, ConsoleView, CSS, PANEL_ID, TAB_ID, TAB_KIND, parseAnsi } };
     },
 });
+

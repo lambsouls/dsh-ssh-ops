@@ -102,11 +102,31 @@ for (const f of files) {
         }
 
         // ③ 本机绝对路径（用户名 / 工作区盘符路径）
-        if (/[A-Za-z]:\\\\?Users\\\\?[^\\\s]+\\(?!\.dsh)/i.test(line) && !line.includes('.dsh')) {
-            add('LOCAL_PATH', `${where} → 用户目录绝对路径`);
+        // 注意：Windows 路径可能写成反斜杠也可能写成正斜杠，两种都要认
+        // （子代理审查实测发现旧版只认反斜杠，`C:/Users/xxx/...` 能过闸）。
+        //
+        // 占位符判定要**窄**：只认 xxx / you / <name> 这类明显假名。
+        // 不要为了「少误报」把 someone / user / name 也放进来 —— 那些在真实机器上完全可能是真用户名。
+        // `${user}` 这类**模板插值**是代码里正常的路径拼装，不是写死的本机路径，要放过
+        // （否则闸门会把所有「拼路径的代码」都当成泄露，那它就没法用了）。
+        const HOME_PLACEHOLDER = /^(xxx+|you|yourname|username|<[^>]*>|\$\{[^}]*\}|\*+|\.\.\.|foo|bar)$/i;
+        const winHome = line.match(/[A-Za-z]:[\\/]{1,2}Users[\\/]{1,2}([^\\/\s"']+)/gi) ?? [];
+        for (const m of winHome) {
+            const user = m.split(/[\\/]/).pop();
+            if (HOME_PLACEHOLDER.test(user.trim())) continue;
+            if (line.includes('.dsh')) continue;          // ~/.dsh 是文档里的标准路径
+            add('LOCAL_PATH', `${where} → 用户目录绝对路径（${user}）`);
         }
-        if (/[A-Za-z]:\\\\?codex\\\\?(projects|credentials)/i.test(line)) {
+        // 具体到某个已知工作区/项目根（两种斜杠）
+        if (/[A-Za-z]:[\\/]+codex[\\/]+(projects|credentials)/i.test(line)) {
             add('LOCAL_PATH', `${where} → 工作区绝对路径`);
+        }
+        // POSIX 的真实家目录（同样只放过明显的假名）
+        const posixHome = line.match(/\/home\/([A-Za-z0-9._*-]+)/g) ?? [];
+        for (const m of posixHome) {
+            const user = m.split('/').pop();
+            if (HOME_PLACEHOLDER.test(user)) continue;
+            add('LOCAL_PATH', `${where} → POSIX 家目录 /home/${user}`);
         }
 
         // ④ 私钥块 / 密码明文 / token
@@ -123,9 +143,11 @@ for (const f of files) {
                 const literal = quoted ? quoted[2] : null;
                 const looksLikeIdentifier = /^[A-Za-z_$][\w$]*(\.[\w$]+|\[[^\]]*\])*(\([^)]*\))?$/.test(rawValue);
                 const looksLikeVar = /^[A-Za-z_$][\w$.\[\]'"()\s]*$/.test(rawValue) && !quoted;
+                // 占位符判定**只认明确形态**。旧版用 `/^<?[\w.-]*>?$/` 把「纯字母数字」一律当占位符，
+                // 结果 `CorrectHorseBatteryStaple99` 这种真密码能直接过闸（子代理实测）。
                 const isPlaceholder = literal === null
                     ? true
-                    : /^(\*+|<?[\w.-]*>?|your[-_ ].*|xxx+|placeholder|example.*|null|undefined|none|true|false)$/i.test(literal);
+                    : /^(\*+|<[^>]*>|your[-_ ].*|xxx+|placeholder|example|sample|null|undefined|none|true|false|demo|test|changeme)$/i.test(literal);
                 // 只有「带引号的、看起来像真密码的字面量」才算问题
                 if (quoted && !looksLikeVar && !looksLikeIdentifier && !isPlaceholder && literal.length >= 6) {
                     add('PLAIN_PASSWORD', where);
@@ -134,6 +156,17 @@ for (const f of files) {
         }
         if (/\b(sk-[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})\b/.test(line)) {
             add('TOKEN', where);
+        }
+
+        // ⑤ 真实 SSH 端口。
+        //    「任何 IPv4:port」太宽 —— 代理 7890、HTTP 8080、时间 10:30 都会误伤。
+        //    只查「公网 IPv4 + 非默认端口」，因为那才是真实基础设施的样子。
+        for (const m of line.matchAll(/\b(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})\b/g)) {
+            const ip = m[1];
+            const port = Number(m[2]);
+            if (port === 22 || port === 80 || port === 443 || port < 1 || port > 65535) continue;
+            if (IP_ALLOW.some((re) => re.test(ip))) continue;   // 回环/私有段当示例，不报
+            add('SSH_PORT', `${where} → 疑似 SSH 端口 ${ip}:${port}`);
         }
     });
 }

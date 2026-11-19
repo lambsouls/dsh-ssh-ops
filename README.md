@@ -130,9 +130,10 @@ node scripts/publish-gate.mjs --all  # 不管 git，扫全目录
 ## 自测
 
 ```bash
-node test-host.mjs       # 23 项：加密/脱敏/凭证库/日志/探测解析/工具契约
+node test-host.mjs       # 25 项：加密/脱敏/凭证库/日志/探测解析/工具契约/参数校验
 node test-ansi.mjs       # 14 项：ANSI 解析（颜色/256色/真彩/跨行继承）
 node test-client.mjs     # 11 项：客户端静态闸门（必须经典脚本/终端必须黑底/只用主题令牌）
+node scripts/gate-selftest.mjs  # 8 项：证明发布闸门真能拦、且不误伤合法代码
 
 # 真连一台（会读你给的凭证文件，但只取 host/port/user/password，不打印）
 node test-live.mjs --cred /path/to/cred.json
@@ -158,7 +159,9 @@ lib/
   http.js           小工具
   server-api.js     只读 REST + SSE
 scripts/
-  publish-gate.mjs  发布闸门（IP/路径/密钥/密码/token）
+  publish-gate.mjs        发布闸门（IP / 本机路径 / 私钥 / 密码 / token / SSH 端口）
+  gate-selftest.mjs       闸门的对抗性自测（证明它真能拦）
+  install-hooks.mjs       装 pre-commit / pre-push 钩子（闸门变硬拦截）
   verify-no-plaintext.mjs 凭证明文闸门
   import-credentials.mjs  从外部 JSON 批量导入
   migrate-data-dir.mjs    把旧位置数据搬进 ~/.dsh/ssh-ops
@@ -177,3 +180,6 @@ scripts/
 ## License
 
 MIT
+
+
+

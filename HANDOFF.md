@@ -64,9 +64,20 @@ git push -u origin main
 ### 待确认
 - **GitHub 账号名**：全局 git 身份是 `lambsouls` / `lambsouls@nerveplexus.cn`，
   但 GitHub 用户名未核实（公开仓库探测因代理未开而失败）。
-- **认证方式**：`credential.helper` 为空，未检测到已保存凭据。推之前要么配 PAT，
-  要么装 `gh` 后 `gh auth login`。
-- **代理**：`127.0.0.1:7890` 当前不通，需要主人先开代理。
+- **认证方式**：`credential.helper = manager`（来自 `C:/Program Files/Git/etc/gitconfig`），
+  Windows 凭据管理器里**可能已有**旧凭据。推送时如果直接成功就不用管；要手动配就用 PAT。
+- **代理**：~~127.0.0.1:7890 不通~~ → **已实测：GitHub 直连可用**（`api.github.com` 返回 200）。
+  全局 `~/.gitconfig` 里配了 `http.proxy=127.0.0.1:7890`，代理没开时 git 会失败。
+  本仓库已 `git config --local` 清空代理；若全局仍拦，用 `git -c http.proxy= push`。
+
+### 已修（子代理审查发现，v0.3.0 收尾时）
+1. `/servers/:id` 详情端点曾因路由顺序**永远不可达**（列表分支无条件 return）→ 已把详情分支移到列表之前。
+2. `test-host.mjs` 里有两条**假测试**（`async () => {}` 空跑、断言依赖前序副作用）→ 已重写成
+   真跑 `index.js` 的 `makeExecutor`（缺字段 / 未知字段），并用同一 service 实例断言。
+3. 闸门三个盲区（正斜杠 Windows 路径、纯字母数字密码、SSH 端口）→ 已补，并加 `scripts/gate-selftest.mjs`
+   做对抗性自测（8 项：7 个应拦 + 7 个不该误伤）。
+4. 版本号 0.2.0 → 0.3.0（package.json 与 client.js 之前没跟上）。
+5. `package.json` 的 `files` 里删掉了不存在的 `docs`。
 
 ## 后续可做的事（按价值排序）
 
