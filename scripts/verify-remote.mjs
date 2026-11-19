@@ -4,21 +4,24 @@
 // 只查 projects/credentials 两个子目录，结果一条指向临时目录的路径被推了上去），
 // 本地永远显示 OK。**只有拿真实远端内容再扫一遍，才能发现「闸门判据有洞」这类问题。**
 //
-// 所以规矩是：**每次 push 完之后都跑一遍这个脚本，它说 OK 才算真的没泄露。**
+// 所以规矩是：**每次 push 完之后都跑一遍，它说 OK 才算真的没泄露。**
 //
-// 它做什么：
-//   ① 用 GitHub API 列出远端全部文件（按实际推送的 commit，不是本地猜）
-//   ② 逐个下载文本文件内容，用 lib/gate-rules.mjs 的**同一套判据**扫
-//   ③ 额外比对：本地 HEAD 与远端分支是否一致（防止「本地改好但没推上去」）
-//   ④ 额外检查：最新 commit 的 message 里有没有敏感信息（commit 历史同样是公开面）
+// 两种取数方式（默认自动选）：
+//   · `--via git`  ：git fetch 后从 git 对象读（`git show <ref>:<path>`）。**不耗 GitHub API 配额**、最稳。
+//   · `--via api`  ：走 GitHub REST。能看到「远端真实字节」，但要配额（匿名 60 次/小时，扫一次就用掉大半）。
+//   自动策略：先试 git；失败或指定 api 时才走 API。
+//
+// 无论哪种方式，都会额外检查：
+//   ① 本地 HEAD 与远端分支是否一致（防「本地改好但没推上去」，那时扫的是旧代码）
+//   ② 最近 commit 的 message（提交历史同样是公开面）
+//   ③ 扫描完整性 —— 有文件没读到就判定「复查不完整」，不拿「读了几个」冒充「读完了」
+//
+// 退出码：0 干净 / 1 发现问题 / 2 没查成。**2 不算通过。**
 //
 // 用法：
-//   node scripts/verify-remote.mjs                # 默认 origin + 当前分支
-//   node scripts/verify-remote.mjs --ref main     # 指定分支
-//   node scripts/verify-remote.mjs --offline      # 只用 Git（不调 API），扫 commit message 与 diff
-//
-// 退出码：0 = 干净；1 = 发现问题；2 = 环境/网络问题（区分「有问题」和「没查成」）。
-import fs from 'node:fs';
+//   node scripts/verify-remote.mjs                # 自动（优先 git）
+//   node scripts/verify-remote.mjs --via api      # 强制走 API
+//   node scripts/verify-remote.mjs --offline      # 只做本地侧检查（不取远端文件）
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -30,133 +33,174 @@ const argOf = (name, fallback = null) => {
     const i = argv.indexOf(`--${name}`);
     return i >= 0 ? argv[i + 1] : fallback;
 };
-
-const PROXY = process.env.SSH_OPS_PROXY || 'http://127.0.0.1:7890';
-const ref = argOf('ref', null);
 const offline = argv.includes('--offline');
+const forceVia = argOf('via', null);
+const branch = argOf('ref', null);
 
-function git(args) {
-    return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim();
+function git(args, opts = {}) {
+    return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', ...opts });
 }
 
-// 从 remote URL 推仓库全名（支持 SSH 与 HTTPS 两种写法）
 function repoSlug() {
-    const url = git(['remote', 'get-url', 'origin']);
+    const url = git(['remote', 'get-url', 'origin']).trim();
     const m = /github\.com[:/]+([^/]+)\/([^/.]+?)(?:\.git)?$/.exec(url);
     if (!m) throw new Error(`无法从 remote URL 解析仓库名：${url}`);
     return `${m[1]}/${m[2]}`;
 }
 
-async function api(url) {
-    const res = await fetch(url, {
-        headers: { 'user-agent': 'dsh-ssh-ops-verify-remote', accept: 'application/vnd.github+json' },
-        // Node 的 fetch 不认系统代理；用全局 dispatcher 又太重，这里手工走代理不现实，
-        // 所以：如果设了 HTTPS_PROXY，就要求调用方用支持代理的 Node（或让系统代理透明处理）。
+const TEXT = /\.(js|mjs|cjs|json|ya?ml|md|py|ts|txt|html|css|svg|sh|ps1)$/i;
+const PROBLEMS = [];
+const add = (code, detail) => PROBLEMS.push({ code, detail });
+
+// ── 取远端文件：git 方式 ──
+function fetchTreeViaGit(ref) {
+    git(['fetch', 'origin', ref, '--quiet']);
+    const remoteRef = `origin/${ref}`;
+    const head = git(['rev-parse', remoteRef]).trim();
+    // 列文件 + 读内容全部走本地 git 对象，零 API 配额
+    const list = git(['ls-tree', '-r', '--name-only', remoteRef]).split('\n').map((s) => s.trim()).filter(Boolean);
+    const files = list.map((p) => {
+        let content = null;
+        try {
+            content = git(['show', `${remoteRef}:${p}`], { maxBuffer: 64 * 1024 * 1024 });
+        } catch { content = null; }
+        return { path: p, content };
     });
+    return { head, files, via: 'git' };
+}
+
+// ── 取远端文件：API 方式 ──
+async function api(url) {
+    const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+    const headers = { 'user-agent': 'dsh-ssh-ops-verify-remote', accept: 'application/vnd.github+json' };
+    if (token) headers.authorization = `Bearer ${token}`;
+    const res = await fetch(url, { headers });
     if (!res.ok) {
         const body = await res.text().catch(() => '');
-        throw new Error(`GitHub API ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 200)}` : ''}`);
+        throw new Error(`GitHub API ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 180)}` : ''}`);
     }
     return res.json();
 }
 
-const PROBLEMS = [];
-const add = (code, detail) => PROBLEMS.push({ code, detail });
+async function fetchTreeViaApi(slug, ref) {
+    const data = await api(`https://api.github.com/repos/${slug}/git/trees/${ref}?recursive=1`);
+    const blobs = (data.tree ?? []).filter((n) => n.type === 'blob');
+    const files = [];
+    for (const node of blobs) {
+        if (!TEXT.test(node.path)) { files.push({ path: node.path, content: null, skipped: true }); continue; }
+        try {
+            const blob = await api(`https://api.github.com/repos/${slug}/git/blobs/${node.sha}`);
+            const text = Buffer.from(blob.content ?? '', blob.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
+            files.push({ path: node.path, content: text });
+        } catch (error) {
+            files.push({ path: node.path, content: null, error: error.message });
+        }
+    }
+    const head = (git(['ls-remote', 'origin', `refs/heads/${ref}`]).trim().split(/\s+/)[0]) || null;
+    return { head, files, via: 'api' };
+}
 
 async function main() {
     const slug = repoSlug();
-    const branch = ref ?? git(['rev-parse', '--abbrev-ref', 'HEAD']);
-    const localHead = git(['rev-parse', 'HEAD']);
+    const ref = branch ?? git(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
+    const localHead = git(['rev-parse', 'HEAD']).trim();
 
     console.log(`仓库：${slug}`);
-    console.log(`分支：${branch}`);
+    console.log(`分支：${ref}`);
     console.log(`本地 HEAD：${localHead.slice(0, 8)}`);
     console.log('');
 
-    // ── 本地/远端一致性 ──
+    // ── 一致性 + commit message ──
     let remoteHead = null;
     try {
-        const out = git(['ls-remote', 'origin', `refs/heads/${branch}`]);
-        remoteHead = out.split(/\s+/)[0] || null;
-    } catch (error) {
-        console.log(`⚠ 读不到远端引用：${error.message}`);
-    }
+        remoteHead = (git(['ls-remote', 'origin', `refs/heads/${ref}`]).trim().split(/\s+/)[0]) || null;
+    } catch { /* 网络问题，后面会体现 */ }
     if (remoteHead) {
         console.log(`远端 HEAD：${remoteHead.slice(0, 8)}`);
-        if (remoteHead === localHead) console.log('✓ 本地与远端一致（远端就是本地这次的提交）');
+        if (remoteHead === localHead) console.log('✓ 本地与远端一致（扫的就是刚推上去的这次提交）');
         else {
-            console.log('⚠ 本地与远端不一致 —— 远端扫的是远端那次提交，不是本地最新');
+            console.log('⚠ 本地与远端不一致 —— 下面扫的是远端那次提交，不是本地最新');
             add('HEAD_MISMATCH', `本地 ${localHead.slice(0, 8)} ≠ 远端 ${remoteHead.slice(0, 8)}`);
         }
     }
     console.log('');
 
-    // ── commit message 也检查（历史是公开面）──
     try {
-        const log = git(['log', '--format=%H%n%B%n---END---', '-n', '20']);
-        const msgs = log.split('---END---').filter((s) => s.trim());
-        for (const block of msgs) {
+        const log = git(['log', '--format=%h%n%B%n---END---', '-n', '20']);
+        const blocks = log.split('---END---').filter((s) => s.trim());
+        for (const block of blocks) {
             const lines = block.trim().split('\n');
-            const sha = lines[0].slice(0, 8);
-            for (const finding of scanContent(lines.slice(1).join('\n'))) {
-                add(finding.code, `commit ${sha} message 第 ${finding.line} 行${finding.detail ? ` → ${finding.detail}` : ''}`);
+            const sha = lines[0].trim();
+            for (const f of scanContent(lines.slice(1).join('\n'))) {
+                add(f.code, `commit ${sha} message 第 ${f.line} 行${f.detail ? ` → ${f.detail}` : ''}`);
             }
         }
-        console.log(`✓ 已检查最近 ${msgs.length} 条 commit message`);
+        console.log(`✓ 已检查最近 ${blocks.length} 条 commit message`);
     } catch (error) {
         console.log(`⚠ commit message 检查跳过：${error.message}`);
     }
 
     if (offline) {
-        console.log('\n（--offline：不下载远端文件，只做了本地侧检查）');
+        console.log('\n（--offline：不取远端文件，只做了本地侧检查）');
         return report();
     }
 
-    // ── 下载远端文件树 ──
-    const treeRef = remoteHead ?? branch;
-    let tree;
-    try {
-        const data = await api(`https://api.github.com/repos/${slug}/git/trees/${treeRef}?recursive=1`);
-        tree = (data.tree ?? []).filter((n) => n.type === 'blob');
-    } catch (error) {
-        console.log(`\n✗ 无法读取远端文件树：${error.message}`);
-        console.log('  提示：API 需要网络可达（github.com 直连不稳时可设 HTTPS_PROXY 或先开代理）。');
+    // ── 取远端文件 ──
+    let tree = null;
+    const tryGit = forceVia !== 'api';
+    const tryApi = forceVia !== 'git';
+
+    if (tryGit) {
+        try {
+            tree = fetchTreeViaGit(ref);
+            console.log(`✓ 远端共 ${tree.files.length} 个文件（via git，不耗 API 配额）`);
+        } catch (error) {
+            console.log(`⚠ git 方式取数失败：${String(error.message).split('\n')[0].slice(0, 120)}`);
+        }
+    }
+    if (!tree && tryApi) {
+        try {
+            tree = await fetchTreeViaApi(slug, ref);
+            console.log(`✓ 远端共 ${tree.files.length} 个文件（via API）`);
+        } catch (error) {
+            console.log(`\n✗ 无法读取远端内容：${String(error.message).split('\n')[0]}`);
+            console.log('  git 与 API 两条路都没走通 —— 这次复查没做成。');
+            process.exitCode = 2;
+            return;
+        }
+    }
+    if (!tree) {
+        console.log('\n✗ 两种方式都没取到远端内容');
         process.exitCode = 2;
         return;
     }
-    console.log(`✓ 远端共 ${tree.length} 个文件`);
 
     // ── 路径规则 ──
-    for (const node of tree) {
-        for (const hit of scanPath(node.path)) add(hit.code, `远端 ${hit.detail}`);
+    for (const f of tree.files) {
+        for (const hit of scanPath(f.path)) add(hit.code, `远端 ${hit.detail}`);
     }
 
-    // ── 逐文件下载内容并扫描 ──
-    const TEXT = /\.(js|mjs|cjs|json|ya?ml|md|py|ts|txt|html|css|svg|sh|ps1)$/i;
-    const textNodes = tree.filter((n) => TEXT.test(n.path));
-    console.log(`✓ 其中 ${textNodes.length} 个文本文件需要逐个检查`);
+    // ── 逐文件内容扫描 ──
+    const toScan = tree.files.filter((f) => f.content !== null || f.error);
+    console.log(`✓ 其中 ${toScan.length} 个文本文件需要逐个检查`);
     console.log('');
 
     let checked = 0;
     let failed = 0;
-    for (const node of textNodes) {
-        try {
-            const blob = await api(`https://api.github.com/repos/${slug}/git/blobs/${node.sha}`);
-            const text = Buffer.from(blob.content ?? '', blob.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
-            const findings = scanContent(text);
-            if (findings.length > 0) {
-                for (const f of findings) {
-                    add(f.code, `${node.path}:${f.line}${f.detail ? ` → ${f.detail}` : ''}`);
-                }
-                console.log(`  ✗ ${node.path}（${findings.length} 处）`);
-            } else {
-                console.log(`  ✓ ${node.path}`);
-            }
-            checked += 1;
-        } catch (error) {
+    for (const f of toScan) {
+        if (f.error) {
             failed += 1;
-            console.log(`  ? ${node.path} — 读取失败：${error.message.slice(0, 80)}`);
+            console.log(`  ? ${f.path} — 读取失败：${String(f.error).slice(0, 70)}`);
+            continue;
         }
+        const findings = scanContent(f.content);
+        if (findings.length > 0) {
+            for (const x of findings) add(x.code, `${f.path}:${x.line}${x.detail ? ` → ${x.detail}` : ''}`);
+            console.log(`  ✗ ${f.path}（${findings.length} 处）`);
+        } else {
+            console.log(`  ✓ ${f.path}`);
+        }
+        checked += 1;
     }
 
     console.log('');
@@ -174,7 +218,7 @@ function report() {
     if (PROBLEMS.length === 0) {
         console.log('✓ 远端内容未发现敏感信息');
         console.log('STATUS: OK');
-        process.exitCode = process.exitCode ?? 0;
+        if (process.exitCode === undefined) process.exitCode = 0;
     } else {
         const byCode = summarize(PROBLEMS);
         for (const [code, items] of byCode) {
