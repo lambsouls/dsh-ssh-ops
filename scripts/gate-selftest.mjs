@@ -28,6 +28,9 @@ const fakeToken = ['ghp', 'abcdefghijklmnopqrstuvwxyz0123456789'].join('_');
 const SHOULD_BLOCK = [
     ['LOCAL_PATH', 'win-forward-slash.js', `const home = "C:/Users/${user}/AppData/Local";`],
     ['LOCAL_PATH', 'posix-home.js', `const p = "/home/${user}/project";`],
+    // 回归用例：曾经漏过闸门并真的推到了 GitHub 上（只查 projects/credentials 的旧判据）。
+    // 这里用拼接构造，避免本文件自己又被拦一次。注意要拼出 "盘符:盘符/段/段" 的形状。
+    ['LOCAL_PATH', 'workspace-tmp-path.js', `const b = "${['D:', 'codex', '.tmp', 'x.bundle'].join('/')}";`],
     ['PLAIN_PASSWORD', 'plain-alpha-password.js', `const cfg = { password: "${strongPw}" };`],
     ['SSH_PORT', 'ssh-port.js', `real: ${realIp}:${port}`],
     ['PUBLIC_IP', 'public-ip.js', `const ip = "${realIp}";`],
@@ -88,3 +91,4 @@ fs.rmSync(PROBE, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}`);
 console.log(fail === 0 ? 'STATUS: OK' : 'STATUS: FAIL');
 process.exitCode = fail === 0 ? 0 : 1;
+

@@ -118,7 +118,9 @@ for (const f of files) {
             add('LOCAL_PATH', `${where} → 用户目录绝对路径（${user}）`);
         }
         // 具体到某个已知工作区/项目根（两种斜杠）
-        if (/[A-Za-z]:[\\/]+codex[\\/]+(projects|credentials)/i.test(line)) {
+        // ⚠️ 旧判据只查 projects / credentials 两个子目录，于是指向工作区临时目录的一条路径
+        //    漏过闸门并真的推到了 GitHub 上。现在**无条件拦**工作区路径，不做任何例外。
+        if (/[A-Za-z]:[\\/]+codex[\\/]/i.test(line)) {
             add('LOCAL_PATH', `${where} → 工作区绝对路径`);
         }
         // POSIX 的真实家目录（同样只放过明显的假名）
@@ -207,3 +209,4 @@ if (PROBLEMS.length === 0) {
     console.log('STATUS: BLOCK');
     process.exitCode = 1;
 }
+

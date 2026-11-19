@@ -84,7 +84,7 @@ git -c http.proxy= -c https.proxy= push -u origin main
 
 ### 离线备份
 
-无凭据时也留了完整仓库快照：`D:\codex\.tmp\dsh-ssh-ops.bundle`（88.8 KB，含全部 7 个提交）。
+无凭据时也留了完整仓库快照：本地临时目录下的 `dsh-ssh-ops.bundle`（约 90 KB，含全部提交）。
 在有凭据的机器上 `git clone <bundle文件> dsh-ssh-ops` 即可还原。
 
 ### 待确认
