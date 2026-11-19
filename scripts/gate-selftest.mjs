@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { scanPath } from '../lib/gate-rules.mjs';
+import { scanPath, scanContent } from '../lib/gate-rules.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROBE = path.join(ROOT, '_gate_probe');
@@ -49,6 +49,17 @@ const SHOULD_BLOCK_PATHS = [
     ['SENSITIVE_PATH', 'logs/ops-console.ndjson', '操作日志'],
 ];
 
+// 真实 serverId 用例：直接测纯函数。这是 2026-11-19 真出过事的漏洞
+// （公开版文档里写进了真实的 `openlist-b0e661`，而闸门报 OK）。
+//
+// ⚠️ 第一条**必须**是当初那段的原文形状 —— 判据第一版只认「这台服务器」，
+// 结果自测全绿却拦不住真实原文（上下文词其实是「音乐服务器」）。
+// **判据要拿真实样本验，不能只拿自己造的样本验。**
+const SHOULD_BLOCK_IDS = [
+    `**三台机器的档案都已建立**。其中音乐服务器（\`${['openlist', 'b0e661'].join('-')}\`）的档案里有：`,
+    `serverId: "${['vps-hk', '3f2a1b'].join('-')}" 已登记。`,
+];
+
 const SHOULD_PASS = [
     ['placeholder.js', `// 示例：const home = "C:/Users/xxx/AppData";\nconst p = "/home/you/project";`],
     ['loopback.js', `const local = "127.0.0.1";\nconst any = "0.0.0.0";`],
@@ -57,6 +68,11 @@ const SHOULD_PASS = [
     ['star-password.js', `const masked = { password: "******" };`],
     ['default-port.js', `const addr = "10.1.2.3:22";\nconst proxy = "127.0.0.1:7890";\nconst web = "192.168.1.5:8080";`],
     ['time-not-port.js', `const t = "10:30:45";`],
+    // serverId 判据的误报控制：这些「长得像 id」的串都不该被拦
+    ['git-short-hash.md', `见提交 ${['a', 'b12cd3'].join('')}，这是 git 短哈希。`],
+    ['npm-scope.md', `安装 @types/${['node', '18ab3f'].join('-')} 与 @deepseek-ai/dsh-ssh-ops。`],
+    ['fixture-id.js', `const SERVER = { id: 'demo-abc123', name: '演示机' };  // 测试夹具`],
+    ['no-context-prose.md', `这一行有 ${['foo', 'bar', '12ab34'].join('-')} 这样的串，但没有服务器上下文词。`],
 ];
 
 function runGate() {
@@ -118,6 +134,27 @@ for (const p of SHOULD_PASS_PATHS) {
     if (hits.length) { console.log(`  ✗ 误伤正常路径：${p} → ${JSON.stringify(hits)}`); pathOk = false; }
 }
 if (pathOk) { console.log(`  ✓ ${SHOULD_PASS_PATHS.length} 个正常代码路径未被误伤`); pass += 1; }
+else fail += 1;
+
+// 真实 serverId 判据
+console.log('[4] 真实 serverId 判据（2026-11-19 真出过事的漏洞）');
+for (const sample of SHOULD_BLOCK_IDS) {
+    const hits = scanContent(sample).filter((h) => h.code === 'SERVER_ID');
+    if (hits.length) { console.log(`  ✓ 拦下：${hits.map((h) => h.detail).join('、')}`); pass += 1; }
+    else { console.log(`  ✗ 漏过：${sample}`); fail += 1; }
+}
+// 反向：占位的 / 无上下文的 id 不该被拦（否则测试文件自己都进不去）
+const SERVER_ID_SAFE = [
+    `const SERVER = { id: "${['demo', 'abc123'].join('-')}" };        // 夹具`,
+    `见提交 ab12cd3 与 @types/${['node', '18ab3f'].join('-')}`,
+    `这里有个 ${['foo', 'bar', '12ab34'].join('-')} 但没有标识类上下文`,
+];
+let idOk = true;
+for (const sample of SERVER_ID_SAFE) {
+    const hits = scanContent(sample).filter((h) => h.code === 'SERVER_ID');
+    if (hits.length) { console.log(`  ✗ 误伤：${sample} → ${hits.map((h) => h.detail).join('、')}`); idOk = false; }
+}
+if (idOk) { console.log(`  ✓ ${SERVER_ID_SAFE.length} 个占位/无上下文的样本未被误伤`); pass += 1; }
 else fail += 1;
 
 cleanProbe();

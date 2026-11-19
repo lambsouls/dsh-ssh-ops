@@ -62,7 +62,7 @@ window.__ModuleLoader__.load({
                 timeline: '时间线',
                 openQuestions: '待确认',
                 profileUpdated: '档案更新',
-                fromOwner: '主人',
+                fromOwner: '用户',
                 fromProbe: '实测',
                 fromAgent: '推断',
                 timelineKind: { change: '改', incident: '故', note: '记', decision: '定' },
@@ -690,7 +690,7 @@ window.__ModuleLoader__.load({
                             h('span', { className: 'so-prof-port-n' }, m.internal ? `:${m.internal}` : '—'),
                             h('span', { className: 'so-prof-port-app' }, m.app ?? ''),
                             // 端口映射尤其要标来源：agent（推断）的映射是线索不是事实，
-                            // 不标出来就会被当成「主人确认过的对外地址」用出去。
+                            // 不标出来就会被当成「用户确认过的对外地址」用出去。
                             h('span', { className: 'so-prof-src' }, sourceMark(m.source)),
                             m.note ? h('span', { className: 'so-prof-port-note' }, m.note) : null))));
                 }

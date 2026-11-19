@@ -1,16 +1,16 @@
 {
   "meta": {
     "title": "Server ops console",
-    "description": "Keeps Linux server credentials, runs SSH commands and service operations on request, and shows a read-only server inventory plus a live console of every operation."
+    "description": "Keeps Linux server credentials, runs SSH commands and service operations on request, and shows a server inventory plus a live console of every operation; display names and tags are editable in the panel."
   },
   "panel": {
     "title": "Server ops console",
-    "subtitle": "Read-only inventory · live operation console",
+    "subtitle": "Inventory · live operation console",
     "tabServers": "Servers",
     "tabConsole": "Console",
     "refresh": "Refresh",
     "inventory": "Managed servers",
-    "inventoryHint": "Expand a row to see what this agent can manage. Read-only: changes are requested in chat.",
+    "inventoryHint": "Expand a row to see what this agent can manage, and that host's profile. Name and tags are editable here; anything affecting the server is requested in chat.",
     "noServers": "No servers registered yet. Ask the agent in chat to add one.",
     "consoleHint": "Live input and output of every server operation in this profile. Credentials and secrets appear as ******.",
     "consoleEmpty": "No operations yet.",

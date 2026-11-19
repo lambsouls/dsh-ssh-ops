@@ -160,7 +160,7 @@ const SAMPLE_PROFILE = {
     summary: '与别人共享公网 IP，只租到部分端口',
     role: '音乐服务器',
     traits: [
-        { id: 'shared-ip', title: '与别人共享公网 IP', kind: 'network', severity: 'critical', detail: '只租到一部分端口', impact: '不能盲扫', evidence: '主人告知', source: 'owner', since: '2026-11-19' },
+        { id: 'shared-ip', title: '与别人共享公网 IP', kind: 'network', severity: 'critical', detail: '只租到一部分端口', impact: '不能盲扫', evidence: '用户告知', source: 'owner', since: '2026-11-19' },
         { id: 'net-drive', title: '音乐在网盘挂载上', kind: 'storage', severity: 'warn', detail: null, impact: '别全库 rescan', evidence: null, source: 'probe', since: null },
     ],
     portMap: [
@@ -196,7 +196,7 @@ const T = { loading: '加载中…', failed: '失败', inventoryHint: '提示', 
     systemApps: '系统服务', noUserApps: '（无）', lastUsed: '最近', never: '从未', authKey: '密钥',
     authPassword: '密码', unknown: '未探测', profile: '档案', noProfile: '无档案', traits: '专属特征',
     portMap: '对外端口', constraints: '硬约束', runbooks: '常用处置', timeline: '时间线',
-    openQuestions: '待确认', profileUpdated: '档案更新', fromOwner: '主人', fromProbe: '实测', fromAgent: '推断',
+    openQuestions: '待确认', profileUpdated: '档案更新', fromOwner: '用户', fromProbe: '实测', fromAgent: '推断',
     timelineKind: { change: '改', incident: '故', note: '记', decision: '定' },
     edit: '编辑', rename: '名字', tags: '标签', save: '保存', cancel: '取消', saving: '保存中…',
     saved: '已保存', namePlaceholder: '起个名', tagsPlaceholder: '逗号分隔', editHint: '只改名字和标签',
@@ -221,8 +221,8 @@ ok('展开行会渲染档案：特征 / 端口映射 / 约束 / 待确认 / 时�
     assert.ok(all.includes('navidrome 的对外端口'), '缺待确认');
     assert.ok(all.includes('决定给每台机器建档'), '缺时间线');
     assert.ok(all.includes('离线更新镜像'), '缺处置步骤');
-    // 来源标记必须渲染出来，否则看面板的人分不清「主人说的」和「模型猜的」
-    assert.ok(all.includes('主人'), '缺 owner 来源标记');
+    // 来源标记必须渲染出来，否则看面板的人分不清「用户说的」和「模型猜的」
+    assert.ok(all.includes('用户'), '缺 owner 来源标记');
     assert.ok(all.includes('实测'), '缺 probe 来源标记');
     assert.ok(all.includes('推断'), '缺 agent 来源标记');
 });
