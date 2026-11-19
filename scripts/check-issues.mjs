@@ -35,9 +35,11 @@ function git(args) {
 
 function repoSlug() {
     const url = git(['remote', 'get-url', 'origin']);
-    const m = /github\.com[:/]+([^/]+)\/([^/.]+?)(?:\.git)?$/.exec(url);
-    if (!m) throw new Error(`无法从 remote URL 解析仓库名：${url}`);
-    return `${m[1]}/${m[2]}`;
+    // 手工切分比正则稳：兼容 `git@host:owner/repo.git` 与 `https://host/owner/repo(.git)`
+    const clean = url.replace(/\.git$/, '').replace(/\/$/, '');
+    const parts = clean.split(/[/:]/).filter(Boolean);
+    if (parts.length < 2) throw new Error(`无法从 remote URL 解析仓库名：${url}`);
+    return parts.slice(-2).join('/');
 }
 
 async function api(url) {
@@ -74,6 +76,18 @@ function snippet(text, max = 160) {
 
 async function main() {
     const slug = repoSlug();
+
+    // ⚠️ GitHub 上另有一个同名仓库（caoyiwei850/dsh-ssh-ops，2026-08 建，不同项目）。
+    // 认错仓库就会去看别人的 issue。这里硬校验 owner。
+    const EXPECTED_OWNER = 'lambsouls';
+    const [owner] = slug.split('/');
+    if (String(owner).toLowerCase() !== EXPECTED_OWNER.toLowerCase()) {
+        console.error(`✗ 仓库 owner 不对：${slug}`);
+        console.error(`  本项目是 ${EXPECTED_OWNER}/dsh-ssh-ops。检查 git remote 是否被改过。`);
+        console.error('STATUS: WRONG_REPO');
+        process.exitCode = 2;
+        return;
+    }
 
     let items;
     try {
@@ -151,3 +165,5 @@ main().catch((error) => {
     console.log('STATUS: ERROR');
     process.exitCode = 2;
 });
+
+

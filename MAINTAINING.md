@@ -294,3 +294,30 @@ node scripts\verify-remote.mjs          # 必须 STATUS: OK
 它**会随仓库推送到 GitHub**（内容是通用的维护知识，不含任何敏感信息）。
 如果你在别的机器 clone 下来，照样能照着做 —— 只是那台机器上没有主人的服务器数据。
 
+
+---
+
+## ⚠️ 认准仓库：GitHub 上有**另一个同名仓库**
+
+`caoyiwei850/dsh-ssh-ops` 与本项目**同名但不是本项目**（2026-08-15 建，59 star，4 个开放 issue）。
+描述也几乎一样（「DeepSeek Harness SSH 运维插件」），极易认错。
+
+### 怎么确认是「我们」
+
+| 判据 | 我们 | 别人 |
+|---|---|---|
+| 全名 | `lambsouls/dsh-ssh-ops` | `caoyiwei850/dsh-ssh-ops` |
+| git remote | `git@github.com:lambsouls/dsh-ssh-ops.git` | — |
+| 创建时间 | 2026-11-19 | 2026-08-15 |
+| 工具集 | **6 只**：`ssh_server_list` / `ssh_server_register` / `ssh_server_env` / `ssh_server_exec` / `ssh_app_control` / `ssh_server_forget` | 有 `sftp_delete` / `ssh_terminal_*` / `ssh_session_log_read` 等，**不是我们的** |
+| 版本线 | 0.3.x | 0.4.5+ |
+
+### 铁律
+
+**先 `git remote get-url origin` 确认 owner 是 `lambsouls`，再动任何 Issue。**
+看到 `sftp_delete`、`ssh_terminal_sessions` 这类工具名 → **不是我们的项目，立刻停手并报告主人**。
+
+另外 DSH 本体仓库（`deepseek-ai/dsh-desktop`）里提到 `dsh-ssh-ops` 的 issue 也不是本项目的 issue。
+
+> 这条是 2026-11-19 由一次无上下文接手的验证中发现的。当时子代理正确识别出了这个陷阱 ——
+> 说明写清楚「怎么认准自己」和写清楚「该做什么」一样重要。
