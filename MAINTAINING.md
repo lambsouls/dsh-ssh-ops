@@ -136,6 +136,7 @@ lib/
   crypto.js         AES-256-GCM 封/解
   vault.js          凭证库（元信息明文 + secrets 密文）
   profile.js        ★ 服务器档案（每台机器独有的运维知识，明文）
+  profile-html.js   档案的独立 HTML 页面（自包含，转义 + 安全头）
   redact.js         脱敏（已知值 + 模式兜底）
   journal.js        操作日志（环形缓冲 + NDJSON）
   ssh.js            Node → Python 桥（spawn + NDJSON 事件流）
@@ -251,6 +252,27 @@ if (unknown.length > 0) throw new Error(`只允许改 name / tags，拒绝了：
 不会（只改本机元信息）→ 照 `setIdentity` 的样子开一个**参数极窄**的专用方法，
 不要做成「通用 update」。
 
+### 3.3.1 档案不铺在面板里，只给一个跳到新标签页的入口
+
+**档案是给 DSH 自己看的**（它决定「动手前先读什么」），对使用者多数时候不需要。
+把特征/端口映射/约束/处置/待确认/时间线六个分区铺进服务器行的展开区，代价是：
+
+- 每次展开都在挤占真正要看的东西（连接信息、应用清单）；
+- 六七个分区的信息密度对「只是想看一眼这台机器装了什么」的人是纯噪音。
+
+所以：**行里只留一个 `档案 ↗` 按钮**，点开新标签页看完整档案（`lib/profile-html.js`）。
+改这个设计前请先回答：用户打开面板时，**第一眼想看到的是机器清单，还是这台机器的运维知识？**
+
+页面实现的三条约束：
+
+| 约束 | 为什么 |
+|---|---|
+| **完全自包含**（无外链 CSS/JS/图片） | 可能在没网络的机器上打开，也可能被另存下来看 |
+| **所有档案文本必须 `esc()`** | 档案内容可能来自模型输出或用户输入，直接插进 HTML 就是 XSS。`test-profile-page.mjs` 有对抗用例守着 |
+| **带 `?fence=1` 放行 + 安全头** | 浏览器直接导航带不上自定义头（同 SSE）；页面还给了 `X-Frame-Options: DENY` / CSP / no-referrer —— 它是把本机档案摊开成网页，不该被嵌进别人的 frame |
+
+> `?fence=1` 只放行**无副作用**的只读端点（SSE、档案页）。**写端点绝不能用查询参数放行** ——
+> 否则跨站页面一个链接就能改你的数据。
 ### 3.4 数据绝不进仓库
 
 `lib/paths.js` 是唯一真源，默认 `~/.dsh/ssh-ops/`。**不要为了调试方便把它指向仓库目录。**
@@ -300,13 +322,14 @@ plugin_manager set_plugin target="include:dsh-ssh-ops" enabled=true
 ## 5. 验证
 
 ```bash
-# 单元与集成（171 项）
+# 单元与集成（197 项）
 node test-host.mjs                # 32 项：加密/脱敏/凭证库/日志/探测解析/工具契约/参数校验
 node test-profile.mjs             # 25 项：档案归一化/增量合并/删除/一致性/渲染/文件边界
 node test-identity.mjs            # 35 项：改名/标签的改动面（重点测「除此之外什么都没变」）
 node test-reassign.mjs            # 19 项：换 serverId 后凭证库与档案是否仍对得上
+node test-profile-page.mjs         # 31 项：档案页面内容完整 + HTML 转义（防 XSS）
 node test-ansi.mjs                # 14 项：ANSI 解析（16/256/真彩、跨行继承、SGR 关闭码）
-node test-client.mjs              # 28 项：客户端静态闸门 + 真渲染（假 React + vm 跑组件）
+node test-client.mjs              # 25 项：客户端静态闸门 + 真渲染（假 React + vm 跑组件）
 node scripts/gate-selftest.mjs    # 16 项：闸门对抗性自测（含真实泄漏样本）
 
 # 语法

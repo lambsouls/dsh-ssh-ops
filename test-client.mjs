@@ -66,10 +66,22 @@ ok('服务器行需要的字段都在', () => {
 ok('系统服务可折叠', () => {
     assert.ok(client.includes('systemApps'), '缺系统服务折叠分组');
 });
-ok('档案区渲染了全部七个分区', () => {
-    for (const marker of ['so-prof', 'traits', 'portMap', 'constraints', 'runbooks', 'openQuestions', 'timeline']) {
-        assert.ok(client.includes(marker), `档案区没渲染 ${marker}`);
+ok('档案不在展开区里铺开，只留一个入口按钮', () => {
+    // 设计意图：档案是给 DSH 自己看的知识，对用户多数时候不需要，七个分区铺在
+    // 服务器行里就是一大坨。所以面板里只给一个「档案 ↗」按钮，点开新标签页看。
+    // 这条测试守的正是「不要再塞回展开区」。
+    const start = client.indexOf('function ServerRow');
+    const end = client.indexOf('function ServersView');
+    const rowBody = client.slice(start, end);
+    assert.ok(rowBody.includes('openProfile'), '行里应有档案入口');
+    assert.ok(/window\.open\(/.test(rowBody), '入口应开新标签页');
+    assert.ok(!rowBody.includes('profileSection'), '展开区不该再调用 profileSection（已移除）');
+    for (const marker of ['so-prof-list', 'so-prof-ports', 'so-prof-tl-row']) {
+        assert.ok(!client.includes(marker), `档案分区样式 ${marker} 不该还留在面板里`);
     }
+});
+ok('档案入口带 noopener/noreferrer（新页面拿不到本页引用）', () => {
+    assert.ok(client.includes('noopener,noreferrer'), '缺 noopener/noreferrer');
 });
 
 // ── 真的把组件跑起来 ────────────────────────────────────────────────────
@@ -210,40 +222,6 @@ ok('服务器清单能渲染（含档案标记）', () => {
     assert.ok(all.includes('档案'), '应有档案标记');
 });
 
-ok('展开行会渲染档案：特征 / 端口映射 / 约束 / 待确认 / 时间线', () => {
-    reset();
-    // 直接调 profileSection（ServerRow 展开时就是调它），才能验到「展开态」而不是折叠态。
-    const tree = internals.profileSection(SAMPLE_SERVER, SAMPLE_PROFILE, null, T);
-    const all = texts(tree).join(' ');
-    assert.ok(all.includes('与别人共享公网 IP'), '缺特征标题');
-    assert.ok(all.includes('·10207') || all.includes(':10207'), '缺端口映射');
-    assert.ok(all.includes('不要扫描共享 IP 的端口'), '缺约束');
-    assert.ok(all.includes('navidrome 的对外端口'), '缺待确认');
-    assert.ok(all.includes('决定给每台机器建档'), '缺时间线');
-    assert.ok(all.includes('离线更新镜像'), '缺处置步骤');
-    // 来源标记必须渲染出来，否则看面板的人分不清「用户说的」和「模型猜的」
-    assert.ok(all.includes('用户'), '缺 owner 来源标记');
-    assert.ok(all.includes('实测'), '缺 probe 来源标记');
-    assert.ok(all.includes('推断'), '缺 agent 来源标记');
-});
-
-ok('展开态：detail 还没加载时显示加载中而不是崩', () => {
-    reset();
-    const tree = internals.profileSection(SAMPLE_SERVER, null, null, T);
-    assert.ok(texts(tree).join(' ').includes('加载中'), '应显示加载中');
-});
-
-ok('展开态：档案加载失败时显示错误而不是白屏', () => {
-    reset();
-    const tree = internals.profileSection(SAMPLE_SERVER, null, '网络错误', T);
-    assert.ok(texts(tree).join(' ').includes('网络错误'));
-});
-
-ok('展开态：无档案时提示「无档案」而不是空白', () => {
-    reset();
-    const tree = internals.profileSection({ ...SAMPLE_SERVER, profile: null }, null, null, T);
-    assert.ok(texts(tree).join(' ').includes('无档案'));
-});
 
 ok('无档案的服务器不会崩，且提示「无档案」', () => {
     reset();

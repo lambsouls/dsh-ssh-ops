@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
         const PANEL_ID = 'dsh-ssh-ops';
         const TAB_ID = 'dsh-ssh-ops';
         const TAB_KIND = 'ssh-ops';
-        const PLUGIN_VERSION = '0.5.1';
+        const PLUGIN_VERSION = '0.6.0';
 
         // ── 文案 ─────────────────────────────────────────────────────────
         const COPY = {
@@ -34,7 +34,7 @@ window.__ModuleLoader__.load({
                 tabConsole: '终端',
                 tabServers: '服务器',
                 refresh: '刷新',
-                inventoryHint: '展开一行可看这台机器上能管什么。本页只读——要动就在对话里说。',
+                inventoryHint: '展开一行可看这台机器上能管什么。名字和标签可直接改；档案点 ↗ 新标签页看；动服务器本身在对话里说。',
                 noServers: '还没有登记服务器。在对话里让我加一台即可。',
                 consoleHint: '所有服务器操作的实时输入与输出。凭证显示为 ******。',
                 consoleEmpty: '还没有任何操作。',
@@ -54,7 +54,7 @@ window.__ModuleLoader__.load({
                 following: '跟随中',
                 wrap: '折行',
                 profile: '档案',
-                noProfile: '这台机器还没有档案（独有特征只能靠猜）',
+                openProfile: '在新标签页查看档案',
                 traits: '专属特征',
                 portMap: '对外端口 → 内部',
                 constraints: '硬约束',
@@ -84,7 +84,7 @@ window.__ModuleLoader__.load({
                 tabConsole: 'Terminal',
                 tabServers: 'Servers',
                 refresh: 'Refresh',
-                inventoryHint: 'Expand a row to see what this agent can manage. Read-only — ask in chat to change anything.',
+                inventoryHint: 'Expand a row to see what this agent can manage. Name and tags are editable here; ↗ opens the profile in a new tab; ask in chat to change anything on the server.',
                 noServers: 'No servers registered yet. Ask the agent in chat to add one.',
                 consoleHint: 'Live input and output of every server operation. Credentials appear as ******.',
                 consoleEmpty: 'No operations yet.',
@@ -104,7 +104,7 @@ window.__ModuleLoader__.load({
                 following: 'Following',
                 wrap: 'Wrap',
                 profile: 'Profile',
-                noProfile: 'No profile yet — this host\'s quirks are being guessed',
+                openProfile: 'Open profile in a new tab',
                 traits: 'Traits',
                 portMap: 'Public → internal',
                 constraints: 'Constraints',
@@ -333,45 +333,11 @@ window.__ModuleLoader__.load({
   padding: 0 6px; color: var(--so-dim); white-space: nowrap; flex: none;
 }
 .so-badge--accent { border-color: var(--so-accent); color: var(--so-accent); }
-.so-badge--profile { border-color: var(--so-line2); color: var(--so-text); }
+/* 档案按钮：一行小入口，不是一坨内容。视觉上要轻，别抢服务器的注意力。 */
+.so-btn--ghost { border-style: dashed; color: var(--so-dim); }
+.so-btn--ghost:hover { color: var(--so-accent); border-color: var(--so-accent); border-style: solid; }
 .so-srv-body { border-top: 1px solid var(--so-line); padding: 8px 10px 10px; background: var(--so-bg); }
 
-/* 档案区 */
-.so-prof { border: 1px solid var(--so-line); border-radius: 7px; background: var(--so-surface); padding: 7px 9px; margin-bottom: 8px; }
-.so-prof--empty { border-style: dashed; color: var(--so-dim); font-size: 10.5px; line-height: 1.5; }
-.so-prof-summary { font-size: 11px; line-height: 1.55; margin-bottom: 6px; }
-.so-prof-loading { color: var(--so-dim); font-size: 10.5px; }
-.so-prof-h { font-size: 10px; color: var(--so-dim); text-transform: uppercase; letter-spacing: .04em; margin: 7px 0 4px; }
-.so-prof-h:first-child { margin-top: 0; }
-.so-prof-list { display: flex; flex-direction: column; gap: 4px; }
-.so-prof-item { display: flex; gap: 6px; font-size: 10.5px; line-height: 1.5; }
-.so-prof-item-main { min-width: 0; flex: 1 1 auto; }
-.so-prof-item-title { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
-.so-prof-item-detail { color: var(--so-dim); margin-top: 1px; }
-.so-prof-item-impact { color: var(--so-dim); margin-top: 1px; font-style: italic; }
-.so-prof-src { font-size: 9px; border: 1px solid var(--so-line); border-radius: 999px; padding: 0 4px; color: var(--so-dim); flex: none; white-space: nowrap; }
-.so-sev { flex: none; width: 6px; height: 6px; border-radius: 50%; margin-top: 5px; background: var(--so-idle); }
-.so-sev--warn { background: var(--so-warn); }
-.so-sev--critical { background: var(--so-bad); box-shadow: 0 0 0 2px color-mix(in srgb, var(--so-bad) 22%, transparent); }
-.so-sev--info { background: var(--so-line2); }
-.so-sev--note { background: var(--so-idle); }
-.so-prof-ports { display: flex; flex-direction: column; gap: 3px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10.5px; }
-.so-prof-port { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
-.so-prof-port-n { color: var(--so-accent); }
-.so-prof-port-arrow { color: var(--so-dim); }
-.so-prof-port-app { font-family: inherit; }
-.so-prof-port-note { color: var(--so-dim); font-size: 10px; }
-.so-prof-steps { margin: 2px 0 0; padding-left: 16px; color: var(--so-dim); }
-.so-prof-q { font-size: 10.5px; color: var(--so-warn); line-height: 1.5; }
-.so-prof-tl { display: flex; flex-direction: column; gap: 2px; }
-.so-prof-tl-row { display: flex; gap: 6px; font-size: 10px; line-height: 1.5; }
-.so-prof-tl-at { color: var(--so-dim); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; flex: none; }
-.so-prof-tl-kind { flex: none; color: var(--so-dim); font-size: 9px; border: 1px solid var(--so-line); border-radius: 3px; padding: 0 3px; white-space: nowrap; }
-.so-prof-tl-kind--incident { color: var(--so-bad); border-color: var(--so-bad); }
-.so-prof-tl-kind--decision { color: var(--so-accent); border-color: var(--so-accent); }
-.so-prof-tl-kind--change { color: var(--so-warn); border-color: var(--so-warn); }
-.so-prof-tl-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.so-prof-foot { margin-top: 6px; padding-top: 5px; border-top: 1px dashed var(--so-line); font-size: 9.5px; color: var(--so-dim); }
 
 /* 名字 / 标签（可编辑） */
 .so-idbar { display: flex; align-items: center; gap: 6px; padding: 5px 7px; margin-bottom: 7px;
@@ -586,21 +552,29 @@ window.__ModuleLoader__.load({
         function ServerRow({ s, t, onRenamed }) {
             const [open, setOpen] = useState(false);
             const [editing, setEditing] = useState(false);
-            const [detail, setDetail] = useState(null);
-            const [detailError, setDetailError] = useState(null);
             const toggle = () => setOpen((v) => !v);
             const stateClass = s.reachable === true ? 'so-dot so-dot--up' : s.reachable === false ? 'so-dot so-dot--down' : 'so-dot';
             const stateTitle = s.reachable === true ? 'reachable' : s.reachable === false ? 'unreachable' : t.unknown;
 
-            // 展开时才去取完整档案：清单只带摘要，整份档案（含全部时间线）按需拉。
-            useEffect(() => {
-                if (!open || detail || !s.profile) return;
-                let cancelled = false;
-                api(`/servers/${encodeURIComponent(s.id)}`)
-                    .then((v) => { if (!cancelled) setDetail(v.profile ?? null); })
-                    .catch((e) => { if (!cancelled) setDetailError(String(e?.message ?? e)); });
-                return () => { cancelled = true; };
-            }, [open, detail, s.id, s.profile]);
+            /**
+             * 打开档案页面。
+             *
+             * 档案是**给 DSH 自己看的**（它决定「动手前先读什么」），对用户多数时候不需要，
+             * 而且七个分区铺在服务器行里就是一大坨。所以改成：行里只给一个入口，
+             * 需要时开新标签页慢慢看。**不往展开区里塞。**
+             *
+             * 三个细节：
+             *   · `noopener,noreferrer` —— 新页面拿不到 window.opener，也收不到本页地址；
+             *   · 带上 fence 参数 —— 页面端点同样受跨站防护，直接导航（而非 fetch）没法带自定义头，
+             *     所以那一个端点额外接受 `?fence=1`（与 SSE 同一处理方式）；
+             *   · 如果没有档案，按钮不出现 —— 点开一个空页面没有意义。
+             */
+            const openProfile = (e) => {
+                e.stopPropagation();
+                const url = `${API}/servers/${encodeURIComponent(s.id)}/profile?fence=1`;
+                try { window.open(url, '_blank', 'noopener,noreferrer'); }
+                catch { /* 被弹窗拦截；用户可重试 */ }
+            };
 
             const head = h('div', {
                 className: 'so-srv-head',
@@ -613,7 +587,16 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'so-srv-main' },
                     h('div', { className: 'so-srv-name' }, s.name),
                     h('div', { className: 'so-srv-addr' }, `${s.user}@${s.host}:${s.port}`)),
-                s.profile ? h('span', { className: 'so-badge so-badge--profile', title: t.profile }, `▣ ${t.profile}`) : null,
+                // 档案只是**一个入口**：一行小按钮，点开新标签页看。
+                // 之前把七个分区铺在这里，视觉上是一大坨，而且用户多数时候并不需要它。
+                s.profile
+                    ? h('button', {
+                        className: 'so-btn so-btn--mini so-btn--ghost', type: 'button',
+                        title: `${t.openProfile}（${t.profile}）`,
+                        onClick: openProfile,
+                        onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); } },
+                    }, `${t.profile} ↗`)
+                    : null,
                 h('span', { className: 'so-badge so-badge--accent' }, `${s.appCount} ${t.apps}`),
                 s.systemAppCount ? h('span', { className: 'so-badge' }, `+${s.systemAppCount}`) : null);
 
@@ -635,6 +618,8 @@ window.__ModuleLoader__.load({
                 // 备注常是用户自己写的一长串运维史：截断到两行高度，全貌放 title
                 notes ? h('dd', { className: 'so-notes', title: notes }, notes.length > NOTES_MAX ? `${notes.slice(0, NOTES_MAX)}…` : notes) : null);
 
+            // 展开区只留「跟用户有关」的东西：标识（名字/标签）、连接信息、应用清单。
+            // 档案不在这里 —— 它有一个独立页面。
             return h('div', { className: 'so-srv' }, head,
                 h('div', { className: 'so-srv-body' },
                     editing
@@ -653,88 +638,8 @@ window.__ModuleLoader__.load({
                                 className: 'so-btn so-btn--mini', type: 'button',
                                 onClick: () => setEditing(true),
                             }, t.edit)),
-                    profileSection(s, detail, detailError, t),
                     kv,
                     h(AppList, { apps: s.apps, t })));
-        }
-
-        /** 档案区：面板只读，只把档案里的知识摊开给人看。 */
-        function profileSection(s, detail, error, t) {
-            if (!s.profile) return h('div', { className: 'so-prof so-prof--empty' }, t.noProfile);
-            const sourceMark = (src) => (src === 'owner' ? t.fromOwner : src === 'probe' ? t.fromProbe : t.fromAgent);
-            const severityClass = (sev) => `so-sev so-sev--${sev || 'note'}`;
-            const body = [];
-
-            if (s.profile.summary) body.push(h('div', { className: 'so-prof-summary' }, s.profile.summary));
-            if (error) body.push(h('div', { className: 'so-error' }, error));
-
-            if (detail) {
-                if (detail.traits.length) {
-                    body.push(h('div', { className: 'so-prof-h' }, `${t.traits} · ${detail.traits.length}`));
-                    body.push(h('div', { className: 'so-prof-list' },
-                        detail.traits.map((x) => h('div', { className: 'so-prof-item', key: x.id },
-                            h('span', { className: severityClass(x.severity), title: x.severity }, '●'),
-                            h('div', { className: 'so-prof-item-main' },
-                                h('div', { className: 'so-prof-item-title' },
-                                    x.title,
-                                    h('span', { className: 'so-prof-src' }, sourceMark(x.source))),
-                                x.detail ? h('div', { className: 'so-prof-item-detail' }, x.detail) : null,
-                                x.impact ? h('div', { className: 'so-prof-item-impact' }, `→ ${x.impact}`) : null)))));
-                }
-                if (detail.portMap.length) {
-                    body.push(h('div', { className: 'so-prof-h' }, t.portMap));
-                    body.push(h('div', { className: 'so-prof-ports' },
-                        detail.portMap.map((m) => h('div', { className: 'so-prof-port', key: m.id },
-                            h('span', { className: 'so-prof-port-n' }, m.public ? `:${m.public}` : '—'),
-                            h('span', { className: 'so-prof-port-arrow' }, '→'),
-                            h('span', { className: 'so-prof-port-n' }, m.internal ? `:${m.internal}` : '—'),
-                            h('span', { className: 'so-prof-port-app' }, m.app ?? ''),
-                            // 端口映射尤其要标来源：agent（推断）的映射是线索不是事实，
-                            // 不标出来就会被当成「用户确认过的对外地址」用出去。
-                            h('span', { className: 'so-prof-src' }, sourceMark(m.source)),
-                            m.note ? h('span', { className: 'so-prof-port-note' }, m.note) : null))));
-                }
-                if (detail.constraints.length) {
-                    body.push(h('div', { className: 'so-prof-h' }, `${t.constraints} · ${detail.constraints.length}`));
-                    body.push(h('div', { className: 'so-prof-list' },
-                        detail.constraints.map((c) => h('div', { className: 'so-prof-item', key: c.id },
-                            h('span', { className: severityClass(c.severity) }, '●'),
-                            h('div', { className: 'so-prof-item-main' },
-                                h('div', { className: 'so-prof-item-title' }, c.text,
-                                    h('span', { className: 'so-prof-src' }, sourceMark(c.source))))))));
-                }
-                if (detail.runbooks.length) {
-                    body.push(h('div', { className: 'so-prof-h' }, `${t.runbooks} · ${detail.runbooks.length}`));
-                    body.push(h('div', { className: 'so-prof-list' },
-                        detail.runbooks.map((r) => h('div', { className: 'so-prof-item', key: r.id },
-                            h('div', { className: 'so-prof-item-main' },
-                                h('div', { className: 'so-prof-item-title' }, r.name,
-                                    r.when ? h('span', { className: 'so-prof-src' }, r.when) : null),
-                                h('ol', { className: 'so-prof-steps' }, r.steps.map((st, i) => h('li', { key: i }, st))))))));
-                }
-                if (detail.openQuestions.length) {
-                    body.push(h('div', { className: 'so-prof-h' }, `${t.openQuestions} · ${detail.openQuestions.length}`));
-                    body.push(h('div', { className: 'so-prof-list' },
-                        detail.openQuestions.map((q, i) => h('div', { className: 'so-prof-q', key: i }, `？ ${q}`))));
-                }
-                if (detail.timeline.length) {
-                    const recent = detail.timeline.slice(-6);
-                    const KIND_MARK = t.timelineKind ?? {};
-                    body.push(h('div', { className: 'so-prof-h' }, `${t.timeline} · ${detail.timeline.length}`));
-                    body.push(h('div', { className: 'so-prof-tl' },
-                        recent.map((x, i) => h('div', { className: 'so-prof-tl-row', key: i },
-                            h('span', { className: 'so-prof-tl-at' }, String(x.at).slice(0, 10)),
-                            h('span', { className: `so-prof-tl-kind so-prof-tl-kind--${x.kind || 'note'}` }, KIND_MARK[x.kind] ?? ''),
-                            h('span', { className: 'so-prof-tl-text', title: x.text }, x.text)))));
-                }
-            } else if (!error) {
-                body.push(h('div', { className: 'so-prof-loading' }, t.loading));
-            }
-
-            body.push(h('div', { className: 'so-prof-foot' },
-                `${t.profileUpdated} ${String(s.profile.updatedAt ?? '').slice(0, 16).replace('T', ' ')}`));
-
-            return h('div', { className: 'so-prof' }, ...body);
         }
 
         function ServersView({ data, loading, error, t, onRenamed }) {
@@ -1029,7 +934,7 @@ window.__ModuleLoader__.load({
             }
         }
 
-        return { inject, apply, __internals: { OpsBody, Panel, RightTab, ServersView, ConsoleView, ServerRow, IdentityEditor, profileSection, AppList, CSS, PANEL_ID, TAB_ID, TAB_KIND, parseAnsi } };
+        return { inject, apply, __internals: { OpsBody, Panel, RightTab, ServersView, ConsoleView, ServerRow, IdentityEditor, AppList, CSS, PANEL_ID, TAB_ID, TAB_KIND, parseAnsi } };
     },
 });
 
