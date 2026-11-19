@@ -1,0 +1,53 @@
+# .gitignore —— 这个仓库只放代码。用户数据永远不进 git。
+#
+# ⚠️ 这不是「保险」，只是最后一道网。真正的保障是数据根本不在仓库目录里：
+#    凭证与日志都在 ~/.dsh/ssh-ops/（见 lib/paths.js）。
+#    下面这些条目针对「万一有人改了配置把数据写回仓库」时的兜底。
+
+# --- 运行时数据（旧版本曾写在这里，v0.3.0 起已迁走）---
+.runtime/
+*.ndjson
+*.log
+
+# --- 凭证（若有人把 vaultDir 配到了仓库内）---
+vault/
+keys/
+servers.json
+master.key
+*.pem
+*.key
+*.ppk
+id_rsa*
+id_ed25519*
+
+# --- 环境与配置 ---
+.env
+.env.*
+config.local.*
+cordis.local.yml
+
+# --- 依赖与构建 ---
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# --- 截图：可能含真实 IP / 端口 / 主机名（规则 42），不要提交 ---
+docs/*.png
+docs/*.jpg
+docs/*.webp
+screenshots/
+
+# --- 编辑器与系统 ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- 临时 ---
+.tmp/
+*.tmp
+*.bak
+__pycache__/
+*.pyc

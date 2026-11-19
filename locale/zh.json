@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "title": "服务器运维台",
+    "description": "保管 Linux 服务器凭证，按指令走 SSH 执行命令与服务运维，并提供只读的服务器总览与实时操作控制台。"
+  },
+  "panel": {
+    "title": "服务器运维台",
+    "subtitle": "只读总览 · 实时操作控制台",
+    "tabServers": "服务器",
+    "tabConsole": "控制台",
+    "refresh": "刷新",
+    "inventory": "已托管服务器",
+    "inventoryHint": "展开行可看这台机器上可管理的内容。本页只读，要改就在对话里说。",
+    "noServers": "还没有登记服务器。在对话里让我加一台即可。",
+    "consoleHint": "本 profile 内所有服务器操作的实时输入与输出。凭证与密钥一律显示为 ******。",
+    "consoleEmpty": "还没有任何操作。",
+    "consoleFilter": "过滤",
+    "clear": "清空视图",
+    "streams": "进行中",
+    "appCount": "个应用",
+    "lastUsed": "最近使用",
+    "never": "从未",
+    "authKey": "密钥",
+    "authPassword": "密码",
+    "online": "可达",
+    "offline": "不可达",
+    "unknown": "未探测",
+    "running": "运行中",
+    "stopped": "已停止",
+    "loading": "加载中…",
+    "errorPrefix": "失败"
+  }
+}

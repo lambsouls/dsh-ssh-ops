@@ -1,0 +1,19 @@
+# dsh-ssh-ops bundle patch
+#
+# 只注册一行；行 id 必须与 index.js 导出的 cordis `name` 一致。
+# 下面这几个配置项全部可选，不写时用代码内默认值（见 index.js 顶部 DEFAULTS）。
+#
+# - insert:
+#     - id: 'dsh-ssh-ops'
+#       name: 'dsh-ssh-ops'
+#       config:
+#         # 凭证库与日志默认都在 ~/.dsh/ssh-ops/ 下（与代码目录分离，见 lib/paths.js）。
+#         # 除非你清楚后果，不要把这两个改成仓库内部的路径。
+#         # vaultDir: '/home/you/.dsh/ssh-ops/vault'
+#         # logDir:   '/home/you/.dsh/ssh-ops/logs'
+#         pythonPath: '/usr/bin/python3'   # 想固定解释器时填；不填则自动探测
+#         defaultTimeoutMs: 120000         # 单条远程命令默认超时
+#         maxOutputBytes: 262144           # 单次返回给模型的输出上限
+- insert:
+    - id: 'dsh-ssh-ops'
+      name: 'dsh-ssh-ops'

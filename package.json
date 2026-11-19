@@ -1,0 +1,34 @@
+{
+  "name": "dsh-ssh-ops",
+  "version": "0.2.0",
+  "private": true,
+  "description": "服务器运维台（dsh-ssh-ops）：集中保管 Linux 服务器凭证，按会话指令走 SSH 执行命令、巡检已装应用并管理服务；同时在 Web 端提供只读的服务器总览与实时操作控制台。",
+  "keywords": ["dsh", "dsh-plugin", "ssh", "ops", "server", "运维", "服务器"],
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "locale/*.json",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "docs"
+  ],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": ["@deepseek-ai/dsh-client-ui-conversation"]
+    }
+  }
+}
