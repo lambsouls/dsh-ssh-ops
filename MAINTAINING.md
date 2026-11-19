@@ -207,12 +207,49 @@ window.__ModuleLoader__.load({
 
 `test-client.mjs` 会验证：所有 `var(--...)` 要么是 `--dsw-alias-*`，要么是本插件前缀 `--so-*`。
 
-### 3.3 面板只读
+### 3.3 面板只开了一个写口子：改名 / 改标签
 
-服务器总览与控制台**不能有任何能改服务器状态的控件**。这是设计意图，不是还没做完。
+**除「显示名」与「标签」之外，面板不能写任何东西。** 这是设计意图，不是还没做完。
 
-写操作只走对话工具（`ssh_server_exec` / `ssh_app_control`）。如果 fork 后想加按钮，
-要想清楚：**面板一能写，它就成了一个带 root 权限的 web 控制台**，安全模型完全不同。
+原来的规矩是「面板全只读」，理由是「面板一能写，它就成了一个带 root 权限的 web 控制台」。
+那句话针对的是**能触发远程操作**的面板。改名/改标签不碰服务器 —— 它只改本机凭证库里两个
+给人看的字段，所以开了这个口子。**边界要守住：凡是会影响服务器状态的东西，一律不许进 REST 面。**
+
+| 能改 | 怎么改 | 约束在哪 |
+|---|---|---|
+| 显示名、标签 | `PATCH /api/ssh-ops/servers/:id` | `vault.setIdentity()` + `service.renameServer()` |
+
+写操作的路径很短，三层各自守一件事：
+
+```js
+// ① server-api.js：入口。除 name/tags 外的字段一律 400，不做「悄悄忽略」
+if (req.method === 'PATCH') { body = await readJsonBody(req); ops.renameServer(id, body); }
+
+// ② service.js：准入。白名单校验 + 留痕（改动进控制台日志）
+const allowed = new Set(['name', 'tags']);
+const unknown = Object.keys(input).filter((k) => !allowed.has(k));
+if (unknown.length > 0) throw new Error(`只允许改 name / tags，拒绝了：${unknown.join('、')}`);
+
+// ③ vault.js：落盘。只写 name/tags，不碰 id/host/port/user/secrets
+```
+
+**为什么不让前端直接调 `vault.upsert()`**：`upsert` 要求 host/user 必填，用它改名会把连接信息
+一起回传；一旦某处传错就可能**改掉地址**，而改错地址的后果是「你以为在操作 A 机，其实连到 B 机」。
+写入口的参数必须窄到「窄到传错了也不会出事」。
+
+**三条硬约束（改 `setIdentity` 前先读）**：
+
+1. **不改 id** —— id 是档案（`profiles/<id>.json`）的键，改了档案就成孤儿；
+2. **不碰 secrets / host / port / user / authType** —— 凭证改动只走 `ssh_server_register`；
+3. **名称为空时退回 host** —— 列表里空名字无法点击，等于把机器藏起来。
+
+**`readJsonBody`（`lib/http.js`）的三道限制都是必须的**：大小上限（8 KB，否则给本机任何进程
+一个往内存灌数据的入口）、读取超时（半开连接会永久占住 handler）、只接受 `application/json`
+（挡表单跨站提交，与 Origin 校验是两道独立的墙）。
+
+**想再加一个面板写操作？** 先回答：它会不会影响服务器状态？会 → 不许进 REST 面，走对话工具。
+不会（只改本机元信息）→ 照 `setIdentity` 的样子开一个**参数极窄**的专用方法，
+不要做成「通用 update」。
 
 ### 3.4 数据绝不进仓库
 
@@ -263,17 +300,22 @@ plugin_manager set_plugin target="include:dsh-ssh-ops" enabled=true
 ## 5. 验证
 
 ```bash
-# 单元与集成（83 项）
-node test-host.mjs                # 25 项：加密/脱敏/凭证库/日志/探测解析/工具契约/参数校验
-node test-profile.mjs             # 24 项：档案归一化/增量合并/删除/一致性/渲染/文件边界
+# 单元与集成（147 项）
+node test-host.mjs                # 32 项：加密/脱敏/凭证库/日志/探测解析/工具契约/参数校验
+node test-profile.mjs             # 25 项：档案归一化/增量合并/删除/一致性/渲染/文件边界
+node test-identity.mjs            # 35 项：改名/标签的改动面（重点测「除此之外什么都没变」）
 node test-ansi.mjs                # 14 项：ANSI 解析（16/256/真彩、跨行继承、SGR 关闭码）
-node test-client.mjs              # 11 项：客户端静态闸门（经典脚本/黑底/主题令牌）
-node scripts/gate-selftest.mjs    #  9 项：闸门对抗性自测
+node test-client.mjs              # 28 项：客户端静态闸门 + 真渲染（假 React + vm 跑组件）
+node scripts/gate-selftest.mjs    # 13 项：闸门对抗性自测
 
 # 语法
 node --check client.js && node --check index.js
 python -m py_compile lib/ssh_exec.py
 ```
+
+**`test-identity.mjs` 的重点不是「改成功了」，是「除此之外什么都没变」**：
+地址、端口、用户名、`secrets` 密文、`notes`、`apps`、id 全部逐一断言没被动过。
+写入口的测试价值就在这里 —— 「能改」本来就成立，「不能改别的」才是要守住的东西。
 
 **对抗性测试**比单元测试更值得写：`gate-selftest.mjs` 造了一批「应该被拦」的样本
 （真实 IP、本机路径、私钥块、强密码、SSH 端口），以及一批「不该误伤」的样本

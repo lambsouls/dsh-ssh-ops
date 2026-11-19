@@ -196,7 +196,11 @@ const T = { loading: '加载中…', failed: '失败', inventoryHint: '提示', 
     systemApps: '系统服务', noUserApps: '（无）', lastUsed: '最近', never: '从未', authKey: '密钥',
     authPassword: '密码', unknown: '未探测', profile: '档案', noProfile: '无档案', traits: '专属特征',
     portMap: '对外端口', constraints: '硬约束', runbooks: '常用处置', timeline: '时间线',
-    openQuestions: '待确认', profileUpdated: '档案更新', fromOwner: '主人', fromProbe: '实测', fromAgent: '推断' };
+    openQuestions: '待确认', profileUpdated: '档案更新', fromOwner: '主人', fromProbe: '实测', fromAgent: '推断',
+    timelineKind: { change: '改', incident: '故', note: '记', decision: '定' },
+    edit: '编辑', rename: '名字', tags: '标签', save: '保存', cancel: '取消', saving: '保存中…',
+    saved: '已保存', namePlaceholder: '起个名', tagsPlaceholder: '逗号分隔', editHint: '只改名字和标签',
+    editNameEmpty: '留空退回地址' };
 
 ok('服务器清单能渲染（含档案标记）', () => {
     reset();
@@ -268,6 +272,71 @@ ok('档案为空数组时也不崩（宽进）', () => {
         profile: { summary: null, role: null, traitCount: 0, constraintCount: 0, portMapCount: 0, openQuestionCount: 0, updatedAt: null },
     };
     assert.ok(internals.ServersView({ data: { count: 1, servers: [weird] }, loading: false, error: null, t: T }));
+});
+
+// ── 名字/标签编辑器（面板唯一的写入面） ──────────────────────────────
+console.log('[client] 名字/标签编辑器');
+
+ok('编辑器能渲染出两个输入框与保存/取消', () => {
+    reset();
+    const tree = internals.IdentityEditor({ server: SAMPLE_SERVER, t: T, onSaved() {}, onCancel() {} });
+    const all = texts(tree).join(' ');
+    assert.ok(all.includes(T.rename), '缺名字标签');
+    assert.ok(all.includes(T.tags), '缺标签标签');
+    assert.ok(all.includes(T.save), '缺保存按钮');
+    assert.ok(all.includes(T.cancel), '缺取消按钮');
+});
+
+ok('编辑器带上已有值（不是空框）', () => {
+    reset();
+    const tree = internals.IdentityEditor({ server: SAMPLE_SERVER, t: T, onSaved() {}, onCancel() {} });
+    const inputs = [];
+    (function walk(n) {
+        if (!n || typeof n !== 'object') return;
+        if (n.type === 'input') inputs.push(n.props);
+        for (const c of n.children ?? []) walk(c);
+    })(tree);
+    assert.strictEqual(inputs.length, 2, `应有 2 个输入框，实际 ${inputs.length}`);
+    assert.strictEqual(inputs[0].value, SAMPLE_SERVER.name, '名字框应预填当前名字');
+    assert.ok(inputs[1].value.includes('测试'), '标签框应预填当前标签');
+});
+
+ok('编辑器只声明 name/tags 两个提交字段（源码级约束）', () => {
+    // 这一段是刻意做「笨」的静态断言：写入面越窄越好，
+    // 任何人在编辑器里多塞一个字段（比如 host）都应该被这里拦下。
+    const start = client.indexOf('function IdentityEditor');
+    const end = client.indexOf('function ServerRow');
+    const body = client.slice(start, end);
+    const patchCall = /api\(`\/servers\/\$\{[^}]+\}`, \{\s*method: 'PATCH',\s*body: \{([^}]*)\}/.exec(body);
+    assert.ok(patchCall, '找不到 PATCH 调用，编辑器结构可能变了');
+    assert.ok(patchCall[1].includes('name'), 'PATCH 体里应含 name');
+    assert.ok(patchCall[1].includes('tags'), 'PATCH 体里应含 tags');
+    assert.ok(!/host|port|password|privateKey|user/.test(patchCall[1]), `PATCH 体里出现了不该有的字段：${patchCall[1]}`);
+});
+
+ok('Esc 会取消、Enter 会保存（键盘行为已接线）', () => {
+    const start = client.indexOf('function IdentityEditor');
+    const end = client.indexOf('function ServerRow');
+    const body = client.slice(start, end);
+    assert.ok(/e\.key === 'Enter'/.test(body), '缺 Enter 处理');
+    assert.ok(/e\.key === 'Escape'/.test(body), '缺 Esc 处理');
+});
+
+ok('改名后是就地更新那一行，不重拉整个清单', () => {
+    // 重拉会让列表闪一下、展开的行塌回去 —— 用户只是改了个名字，
+    // 不该为此付出「重新找到刚才那台机器」的代价。
+    assert.ok(client.includes('handleRenamed'), '缺就地更新处理');
+    const start = client.indexOf('const handleRenamed');
+    const body = client.slice(start, start + 700);
+    assert.ok(body.includes('servers: prev.servers.map'), '应在本地替换那一行');
+    assert.ok(!body.includes('load()'), '不该在改名后调用 load() 重拉');
+});
+
+ok('标签以胶囊形式渲染（不是一坨逗号串）', () => {
+    reset();
+    const tree = internals.ServersView({ data: { count: 1, servers: [SAMPLE_SERVER] }, loading: false, error: null, t: T });
+    // 折叠态没有标签区，直接查样式类是否存在
+    assert.ok(client.includes('.so-tag {'), '缺标签胶囊样式');
 });
 
 console.log(`\n通过 ${passed} 项${process.exitCode ? '，有失败' : '，全部通过'}`);

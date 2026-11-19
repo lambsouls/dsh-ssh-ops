@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
         const PANEL_ID = 'dsh-ssh-ops';
         const TAB_ID = 'dsh-ssh-ops';
         const TAB_KIND = 'ssh-ops';
-        const PLUGIN_VERSION = '0.4.0';
+        const PLUGIN_VERSION = '0.5.0';
 
         // ── 文案 ─────────────────────────────────────────────────────────
         const COPY = {
@@ -66,6 +66,17 @@ window.__ModuleLoader__.load({
                 fromProbe: '实测',
                 fromAgent: '推断',
                 timelineKind: { change: '改', incident: '故', note: '记', decision: '定' },
+                edit: '编辑',
+                rename: '名字',
+                tags: '标签',
+                save: '保存',
+                cancel: '取消',
+                saving: '保存中…',
+                saved: '已保存',
+                namePlaceholder: '给这台机器起个名字',
+                tagsPlaceholder: '逗号分隔，例如：生产, 国内, 音乐',
+                editHint: '只能改名字和标签——它们只影响本机显示，不碰服务器。',
+                editNameEmpty: '名字留空会退回用地址显示。',
             },
             en: {
                 title: 'Server ops console',
@@ -105,6 +116,17 @@ window.__ModuleLoader__.load({
                 fromProbe: 'probed',
                 fromAgent: 'inferred',
                 timelineKind: { change: 'chg', incident: 'inc', note: 'note', decision: 'dec' },
+                edit: 'Edit',
+                rename: 'Name',
+                tags: 'Tags',
+                save: 'Save',
+                cancel: 'Cancel',
+                saving: 'Saving…',
+                saved: 'Saved',
+                namePlaceholder: 'Give this host a name',
+                tagsPlaceholder: 'Comma separated, e.g. prod, eu, music',
+                editHint: 'Name and tags only — they affect local display, never the server.',
+                editNameEmpty: 'Empty name falls back to the address.',
             },
         };
 
@@ -226,12 +248,18 @@ window.__ModuleLoader__.load({
         }
 
         // ── 网络层 ────────────────────────────────────────────────────────
-        async function api(path, { timeoutMs = 15000, method = 'GET' } = {}) {
+        async function api(path, { timeoutMs = 15000, method = 'GET', body = undefined } = {}) {
             const ac = typeof AbortController === 'function' ? new AbortController() : null;
             const timer = ac ? setTimeout(() => ac.abort(), timeoutMs) : null;
             let response;
+            const headers = { [FENCE]: '1' };
+            const init = { method, signal: ac?.signal, headers };
+            if (body !== undefined) {
+                headers['content-type'] = 'application/json';
+                init.body = JSON.stringify(body);
+            }
             try {
-                response = await fetch(`${API}${path}`, { method, signal: ac?.signal, headers: { [FENCE]: '1' } });
+                response = await fetch(`${API}${path}`, init);
             } catch (error) {
                 const aborted = error?.name === 'AbortError';
                 throw new Error(aborted ? `请求超时（${Math.round(timeoutMs / 1000)}s）` : `网络错误：${String(error?.message ?? error)}`);
@@ -344,6 +372,37 @@ window.__ModuleLoader__.load({
 .so-prof-tl-kind--change { color: var(--so-warn); border-color: var(--so-warn); }
 .so-prof-tl-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .so-prof-foot { margin-top: 6px; padding-top: 5px; border-top: 1px dashed var(--so-line); font-size: 9.5px; color: var(--so-dim); }
+
+/* 名字 / 标签（可编辑） */
+.so-idbar { display: flex; align-items: center; gap: 6px; padding: 5px 7px; margin-bottom: 7px;
+  border: 1px dashed var(--so-line2); border-radius: 6px; background: var(--so-surface); }
+.so-idbar-name { font-size: 11px; color: var(--so-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.so-idbar-spacer { flex: 1 1 auto; }
+.so-btn--mini { padding: 1px 6px; font-size: 10.5px; }
+.so-btn--primary { border-color: var(--so-accent); color: var(--so-accent); }
+.so-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.so-tag { font-size: 10px; border: 1px solid var(--so-line2); border-radius: 999px; padding: 0 6px;
+  color: var(--so-dim); white-space: nowrap; }
+.so-edit { border: 1px solid var(--so-accent); border-radius: 7px; background: var(--so-surface);
+  padding: 8px 9px; margin-bottom: 8px; }
+.so-edit-hint { font-size: 10px; color: var(--so-dim); line-height: 1.5; margin-bottom: 6px; }
+.so-edit-row { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+.so-edit-label { font-size: 10.5px; color: var(--so-dim); flex: none; width: 34px; }
+/* 编辑器底色是 surface，输入框必须比它更亮/更暗一档并把边框画出来，
+   否则看起来像一段静态文本，用户不会意识到那里能点。 */
+.so-edit-input {
+  flex: 1 1 auto; background: var(--so-bg); border: 1px solid var(--so-line2);
+  padding: 3px 7px; border-radius: 5px;
+}
+.so-edit-input:hover:not(:disabled) { border-color: var(--so-accent); }
+.so-edit-input:focus {
+  outline: none; border-color: var(--so-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--so-accent) 20%, transparent);
+}
+.so-edit-input:disabled { opacity: .6; }
+.so-edit-foot { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+.so-edit-note { font-size: 9.5px; color: var(--so-dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.so-edit-spacer { flex: 1 1 auto; }
 .so-kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 11px; margin: 0 0 8px; }
 .so-kv dt { color: var(--so-dim); }
 .so-kv dd { margin: 0; word-break: break-all; }
@@ -454,8 +513,79 @@ window.__ModuleLoader__.load({
                     : null);
         }
 
-        function ServerRow({ s, t }) {
+        /**
+         * 名字/标签编辑器 —— 面板上**唯一**能写的地方。
+         *
+         * 设计要点：
+         *   · 只提交 name 与 tags 两个键，后端也是这么校验的（多传会被拒）；
+         *   · 保存成功后把新值回传给父组件，**不重拉整个清单**（改了名字却要等一整轮刷新，体验很差）；
+         *   · 失败时保留用户输入（不能因为网络抖一下就让人白打一遍字）；
+         *   · Enter 保存 / Esc 取消 —— 这两件事用户会下意识去按。
+         */
+        function IdentityEditor({ server, t, onSaved, onCancel }) {
+            const [name, setName] = useState(server.name ?? '');
+            const [tagsText, setTagsText] = useState((server.tags || []).join(', '));
+            const [busy, setBusy] = useState(false);
+            const [error, setError] = useState(null);
+
+            const save = useCallback(async () => {
+                setBusy(true);
+                setError(null);
+                // 逗号（中英文都认）分隔；后端还会再做一次归一与去重
+                const tags = tagsText.split(/[,，]/).map((x) => x.trim()).filter(Boolean);
+                try {
+                    const value = await api(`/servers/${encodeURIComponent(server.id)}`, {
+                        method: 'PATCH',
+                        body: { name: name.trim(), tags },
+                    });
+                    onSaved(value.server);
+                } catch (e) {
+                    setError(String(e?.message ?? e));
+                } finally {
+                    setBusy(false);
+                }
+            }, [name, tagsText, server.id, onSaved]);
+
+            const onKeyDown = (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!busy) save(); }
+                else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+            };
+
+            return h('div', { className: 'so-edit' },
+                h('div', { className: 'so-edit-hint' }, t.editHint),
+                error ? h('div', { className: 'so-error' }, error) : null,
+                h('label', { className: 'so-edit-row' },
+                    h('span', { className: 'so-edit-label' }, t.rename),
+                    h('input', {
+                        className: 'so-edit-input', value: name, disabled: busy,
+                        placeholder: t.namePlaceholder, maxLength: 64,
+                        onChange: (e) => setName(e.target.value), onKeyDown,
+                        'aria-label': t.rename,
+                    })),
+                h('label', { className: 'so-edit-row' },
+                    h('span', { className: 'so-edit-label' }, t.tags),
+                    h('input', {
+                        className: 'so-edit-input', value: tagsText, disabled: busy,
+                        placeholder: t.tagsPlaceholder,
+                        onChange: (e) => setTagsText(e.target.value), onKeyDown,
+                        'aria-label': t.tags,
+                    })),
+                h('div', { className: 'so-edit-foot' },
+                    h('span', { className: 'so-edit-note' }, name.trim() ? '' : t.editNameEmpty),
+                    h('span', { className: 'so-edit-spacer' }),
+                    h('button', {
+                        className: 'so-btn', type: 'button', disabled: busy,
+                        onClick: onCancel,
+                    }, t.cancel),
+                    h('button', {
+                        className: 'so-btn so-btn--primary', type: 'button', disabled: busy,
+                        onClick: save,
+                    }, busy ? t.saving : t.save)));
+        }
+
+        function ServerRow({ s, t, onRenamed }) {
             const [open, setOpen] = useState(false);
+            const [editing, setEditing] = useState(false);
             const [detail, setDetail] = useState(null);
             const [detailError, setDetailError] = useState(null);
             const toggle = () => setOpen((v) => !v);
@@ -496,14 +626,33 @@ window.__ModuleLoader__.load({
                 h('dt', null, 'Auth'), h('dd', null, s.auth === 'key' ? t.authKey : t.authPassword),
                 s.os ? h('dt', null, 'OS') : null, s.os ? h('dd', null, s.os) : null,
                 h('dt', null, t.lastUsed), h('dd', null, agoText(s.lastUsedAt, t)),
-                s.tags && s.tags.length ? h('dt', null, 'Tags') : null,
-                s.tags && s.tags.length ? h('dd', null, s.tags.join('、')) : null,
+                s.tags && s.tags.length ? h('dt', null, t.tags) : null,
+                s.tags && s.tags.length
+                    ? h('dd', null, h('span', { className: 'so-tags' },
+                        s.tags.map((tag) => h('span', { className: 'so-tag', key: tag }, tag))))
+                    : null,
                 notes ? h('dt', null, 'Notes') : null,
                 // 备注常是用户自己写的一长串运维史：截断到两行高度，全貌放 title
                 notes ? h('dd', { className: 'so-notes', title: notes }, notes.length > NOTES_MAX ? `${notes.slice(0, NOTES_MAX)}…` : notes) : null);
 
             return h('div', { className: 'so-srv' }, head,
                 h('div', { className: 'so-srv-body' },
+                    editing
+                        ? h(IdentityEditor, {
+                            server: s, t,
+                            onCancel: () => setEditing(false),
+                            onSaved: (updated) => {
+                                setEditing(false);
+                                if (onRenamed) onRenamed(updated);
+                            },
+                        })
+                        : h('div', { className: 'so-idbar' },
+                            h('span', { className: 'so-idbar-name', title: s.name }, `✎ ${t.rename}：${s.name}`),
+                            h('span', { className: 'so-idbar-spacer' }),
+                            h('button', {
+                                className: 'so-btn so-btn--mini', type: 'button',
+                                onClick: () => setEditing(true),
+                            }, t.edit)),
                     profileSection(s, detail, detailError, t),
                     kv,
                     h(AppList, { apps: s.apps, t })));
@@ -588,14 +737,14 @@ window.__ModuleLoader__.load({
             return h('div', { className: 'so-prof' }, ...body);
         }
 
-        function ServersView({ data, loading, error, t }) {
+        function ServersView({ data, loading, error, t, onRenamed }) {
             if (loading && !data) return h('div', { className: 'so-loading' }, t.loading);
             return h('div', null,
                 error ? h('div', { className: 'so-error' }, `${t.failed}：${error}`) : null,
                 h('div', { className: 'so-hint' }, t.inventoryHint),
                 (!data || data.count === 0)
                     ? h('div', { className: 'so-empty' }, t.noServers)
-                    : data.servers.map((s) => h(ServerRow, { key: s.id, s, t })));
+                    : data.servers.map((s) => h(ServerRow, { key: s.id, s, t, onRenamed })));
         }
 
         // ── 终端 ─────────────────────────────────────────────────────────
@@ -747,6 +896,23 @@ window.__ModuleLoader__.load({
 
             useEffect(() => { load(); }, [load]);
 
+            /**
+             * 改名/改标签成功后**就地更新这一行**，不重拉整个清单。
+             * 理由：重拉会让整张列表闪一下、展开的行也会塌回去——用户只是改了个名字，
+             * 不该为此付出「重新找到刚才那台机器」的代价。
+             */
+            const handleRenamed = useCallback((updated) => {
+                setData((prev) => {
+                    if (!prev) return prev;
+                    return {
+                        ...prev,
+                        servers: prev.servers.map((x) => (x.id === updated.id
+                            ? { ...x, name: updated.name, tags: updated.tags }
+                            : x)),
+                    };
+                });
+            }, []);
+
             return h('div', { className: `so-root${compact ? ' so-root--right' : ''}` },
                 h('style', null, CSS),
                 h('div', { className: 'so-head' },
@@ -769,7 +935,7 @@ window.__ModuleLoader__.load({
                     }, `${t.tabServers}${data ? ` · ${data.count}` : ''}`)),
                 h('div', { className: 'so-body' },
                     tab === 'servers'
-                        ? h(ServersView, { data, loading, error, t })
+                        ? h(ServersView, { data, loading, error, t, onRenamed: handleRenamed })
                         : h(ConsoleView, { t, compact })));
         }
 
@@ -863,7 +1029,7 @@ window.__ModuleLoader__.load({
             }
         }
 
-        return { inject, apply, __internals: { OpsBody, Panel, RightTab, ServersView, ConsoleView, ServerRow, profileSection, AppList, CSS, PANEL_ID, TAB_ID, TAB_KIND, parseAnsi } };
+        return { inject, apply, __internals: { OpsBody, Panel, RightTab, ServersView, ConsoleView, ServerRow, IdentityEditor, profileSection, AppList, CSS, PANEL_ID, TAB_ID, TAB_KIND, parseAnsi } };
     },
 });
 
