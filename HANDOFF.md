@@ -35,7 +35,10 @@ git 仓库已初始化并完成首次提交，**工作区干净、内容零敏�
 ```bash
 cd <本仓库目录>
 
-# 1) 闸门必须先过（非零退出 = 不许推）
+# 0) 新克隆的仓库先装钩子（钩子是本地文件，不随 git 走）
+node scripts/install-hooks.mjs
+
+# 1) 闸门必须先过（钩子会自动跑，这里手动跑一次看结果）
 node scripts/publish-gate.mjs --all
 
 # 2) 代理（当前环境需要；7890 是 Clash 默认端口，按实际改）
@@ -47,6 +50,9 @@ git config --local https.proxy http://127.0.0.1:7890
 git remote add origin https://github.com/<主人账号>/dsh-ssh-ops.git
 git push -u origin main
 ```
+
+> **闸门是硬拦截**：`pre-commit` / `pre-push` 钩子会自动跑，跑不过就提交不了。
+> 钩子不随仓库分发，**换机器或新克隆后必须跑一次 `node scripts/install-hooks.mjs`**。
 
 ### 待确认
 - **GitHub 账号名**：全局 git 身份是 `lambsouls` / `lambsouls@nerveplexus.cn`，
