@@ -37,29 +37,55 @@ git 仓库已初始化并完成首次提交，**工作区干净、内容零敏�
    换机器 / 新克隆后要跑一次 `node scripts/install-hooks.mjs`（钩子是本地文件，不随 git 分发）。
 3. **`.gitignore`**（最弱）：只挡「手滑 git add」，挡不住「手工 tar 整个目录」。
 
-## 推送流程（还没做）
+## 推送流程（**卡在认证，需主人提供凭据**）
+
+### 当前状态（2026-11-19 20:15）
+
+| 项 | 结果 |
+|---|---|
+| 仓库 | ✅ 就绪：`main` 分支、7 个提交、36 个跟踪文件、工作区干净 |
+| remote | ✅ 已设为 `https://github.com/lambsouls/dsh-ssh-ops.git` |
+| GitHub 账号 | ✅ 确认存在（`lambsouls`，14 个公开仓库）；`dsh-ssh-ops` 名字可用 |
+| 闸门 | ✅ `STATUS: OK`（全目录 + 已跟踪文件都过） |
+| **认证** | ❌ **无任何 GitHub 凭据**：凭据管理器无 github 条目、无 `GITHUB_TOKEN`/`GH_TOKEN` 环境变量、工作区无相关凭证 |
+| 网络 | ⚠️ 不稳定：`github.com:443` 约 5 次通 1 次；`api.github.com` 稳定；`ssh(22)` 通但本机无密钥 |
+
+**结论：内容已完全就绪，只差凭据。** 一旦提供，一条命令即可推送。
+
+### 主人需要做的（三选一）
+
+**A. 提供 PAT（最快）**
+在 https://github.com/settings/tokens 建一个 classic token，勾 `repo` 权限，然后告诉我。
+我会用它推一次，推完立刻从 remote URL 里抹掉（不留在 `.git/config`）。
+
+**B. 在这台机器上登录一次**
+任意终端跑一次 `git push`，让 Windows 凭据管理器弹出登录窗口完成授权；
+之后我在同一账号下推送就不需要再问。
+
+**C. 装 gh 并登录**
+```powershell
+winget install GitHub.cli
+gh auth login      # 浏览器授权
+gh repo create dsh-ssh-ops --public --source=. --remote=origin --push
+```
+
+### 推送命令（凭据就位后）
 
 ```bash
 cd <本仓库目录>
-
-# 0) 新克隆的仓库先装钩子（钩子是本地文件，不随 git 走）
-node scripts/install-hooks.mjs
-
-# 1) 闸门必须先过（钩子会自动跑，这里手动跑一次看结果）
-node scripts/publish-gate.mjs --all
-
-# 2) 代理（当前环境需要；7890 是 Clash 默认端口，按实际改）
-git config --local http.proxy http://127.0.0.1:7890
-git config --local https.proxy http://127.0.0.1:7890
-
-# 3) 建仓（gh 未安装，用 web 或装 gh）
-#    https://github.com/new  →  仓库名建议 dsh-ssh-ops，Public
-git remote add origin https://github.com/<主人账号>/dsh-ssh-ops.git
-git push -u origin main
+node scripts/publish-gate.mjs --all      # 必须 OK
+git -c http.proxy= -c https.proxy= push -u origin main
 ```
 
-> **闸门是硬拦截**：`pre-commit` / `pre-push` 钩子会自动跑，跑不过就提交不了。
-> 钩子不随仓库分发，**换机器或新克隆后必须跑一次 `node scripts/install-hooks.mjs`**。
+> 为什么带 `-c http.proxy=`：全局 `~/.gitconfig` 配了 `http.proxy=127.0.0.1:7890`，
+> 代理没开时 git 会去连一个不存在的端口。本仓库已清空 local 代理，但全局配置仍可能拦。
+>
+> 网络不稳，`push` 可能要重试几次。不要用 `--force`，`main` 是空仓库不需要。
+
+### 离线备份
+
+无凭据时也留了完整仓库快照：`D:\codex\.tmp\dsh-ssh-ops.bundle`（88.8 KB，含全部 7 个提交）。
+在有凭据的机器上 `git clone <bundle文件> dsh-ssh-ops` 即可还原。
 
 ### 待确认
 - **GitHub 账号名**：全局 git 身份是 `lambsouls` / `lambsouls@nerveplexus.cn`，
