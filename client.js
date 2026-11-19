@@ -476,9 +476,11 @@ window.__ModuleLoader__.load({
   top: 0; left: 0;
   width: 100vw; height: 100vh;
   z-index: 200;
-  /* 用**不透明**深色：半透明背景在部分合成路径下会整层被跳过（实测抓不到）。
-     模态框不需要透视底部，不透明更稳。 */
-  background: #0b0e13;
+  /* 半透明遮罩：模态框的标准做法 —— 能看见底下界面但明显变暗。
+     ⚠️ 曾经因为「截图里看不到」而改成不透明纯黑，结果整屏发黑、体验更差。
+     那是 PrintWindow 不合成半透明层的限制，不是真实显示问题。
+     要看真实效果必须用屏幕级截图（Graphics.CopyFromScreen），不能用 PrintWindow。 */
+  background: rgba(8, 10, 14, .55);
   color: var(--so-text);
   font-size: 13px;
   display: flex; align-items: center; justify-content: center;

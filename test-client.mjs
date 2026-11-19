@@ -304,6 +304,18 @@ ok('overlay 条目订阅了 store（点击按钮才能通知到浮层）', () =>
     assert.ok(src.includes('profileStore.open('), '点按钮应调用 store.open');
 });
 
+ok('遮罩必须是半透明（不许改成不透明纯黑）', () => {
+    // 事故记录：曾经因为「PrintWindow 截图里看不到半透明遮罩」，误判成显示有问题，
+    // 把 rgba(...) 改成了不透明 #0b0e13 —— 结果整屏发黑，体验更差。
+    // 真相是 PrintWindow 不合成半透明层；要看真实效果得用 CopyFromScreen 屏幕级截图。
+    // 这条测试守住「别再因为截图看不到就改坏 UI」。
+    const hostRule = /\.so-pf-host\s*\{([\s\S]*?)\}/.exec(client);
+    assert.ok(hostRule, '找不到 .so-pf-host 样式');
+    const body = hostRule[1].replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.ok(/background:\s*rgba\(/.test(body), '遮罩背景必须是 rgba（半透明）');
+    assert.ok(!/background:\s*#[0-9a-f]{3,8}\s*;/i.test(body), '遮罩不许用不透明十六进制色');
+});
+
 ok('完整面板能渲染（两种容器形态都试）', () => {
     reset();
     assert.ok(internals.Panel());
