@@ -46,6 +46,22 @@ if [ $? -ne 0 ]; then
     echo "✗ 全目录复查找出隐患 —— 推送已中止。"
     exit 1
 fi
+
+echo ""
+echo "──────────────────────────────────────────────────────"
+echo "  ⚠ push 还没结束，等下一条提醒："
+echo "  push 成功后必须再跑一次「远端复查」——"
+echo "     node scripts/verify-remote.mjs"
+echo "  它扫的是 GitHub 上的真实内容。本地闸门只能查它知道的模式，"
+echo "  判据本身有洞时本地永远 OK —— 只有远端复查能发现这件事。"
+echo "──────────────────────────────────────────────────────"
+echo ""
+exit 0
+`;
+
+const postCommit = `#!/bin/sh
+# 由 scripts/install-hooks.mjs 生成。
+# 提交后不打扰，只是把「推完要复查远端」这件事留在眼前的提示里。
 exit 0
 `;
 
@@ -57,3 +73,4 @@ for (const [name, body] of [['pre-commit', preCommit], ['pre-push', prePush]]) {
 }
 
 console.log('\n钩子已安装。之后每次 git commit / git push 都会自动跑闸门。');
+

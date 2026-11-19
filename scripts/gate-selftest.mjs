@@ -17,7 +17,9 @@ const PROBE = path.join(ROOT, '_gate_probe');
 
 // 用拼接伪造，避免本文件被自己的规则命中
 const octet = (a, b, c, d) => [a, b, c, d].join('.');
-const realIp = octet(203, 0, 113, 9);          // TEST-NET-3，专用于文档示例的保留段，非真实主机
+// 用一个**不在白名单**里的公网地址形状。注意别用 203.0.113.x / 192.0.2.x ——
+// 那些是 RFC 5737 文档保留段，已在 IP_ALLOW 里，测不出东西来。
+const realIp = octet(198, 18, 7, 42);
 const port = [105, 56].join('');                // 非默认 SSH 端口
 const user = ['some', 'one'].join('');          // 看起来像真用户名
 const strongPw = ['Correct', 'Horse', 'Battery', 99].join('');  // 纯字母数字的真密码形态
@@ -91,4 +93,5 @@ fs.rmSync(PROBE, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}`);
 console.log(fail === 0 ? 'STATUS: OK' : 'STATUS: FAIL');
 process.exitCode = fail === 0 ? 0 : 1;
+
 

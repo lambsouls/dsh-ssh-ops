@@ -75,15 +75,24 @@ dsh plugin --profile <你的 profile> add /绝对路径/到/dsh-ssh-ops
 
 两处路径都可由插件 Config 覆盖（`vaultDir` / `logDir`），**但不要指向仓库内部**。
 
-发布前跑一次闸门：
+### 三道检查，一道都不能省
 
 ```bash
-node scripts/publish-gate.mjs        # 有 .git 时检查「已跟踪文件」
-node scripts/publish-gate.mjs --all  # 不管 git，扫全目录
+node scripts/publish-gate.mjs --all   # ① push 前（钩子会自动跑）
+git push                              # ② 推
+node scripts/verify-remote.mjs        # ③ push 后 —— 扫 GitHub 上的真实内容，必须手动
 ```
 
-它检查五项：敏感路径被跟踪、真实公网 IP、本机绝对路径、私钥块/密码字面量/token 形状、
-仓库目录里存在运行时数据。**任何一条命中就 `STATUS: BLOCK` 并非零退出。**
+`publish-gate` 检查：敏感路径被跟踪、真实公网 IP、本机绝对路径、私钥块、密码字面量、
+token 形状、SSH 端口、仓库目录里存在运行时数据。**任何一条命中就 `STATUS: BLOCK` 并非零退出。**
+
+`verify-remote` 走 GitHub API 把远端文件逐个下载回来，用**同一套判据**（`lib/gate-rules.mjs`）再扫一遍；
+另外核对本地与远端 HEAD 是否一致、扫 commit message、并在有文件没读到时判定「复查不完整」。
+退出码 `0` 干净 / `1` 有问题 / `2` 没查成 —— **`2` 不算通过。**
+
+> **为什么推完还要查：** 本地闸门只查它知道的模式。判据有洞时本地永远 OK ——
+> 首次推送时真实发生过一次（判据只查两个子目录，一条临时目录路径漏网并进了远端）。
+> **推完不复查 ＝ 没检查过。**
 
 > `.gitignore` 只是最后一道网，不是保障。真正的保障是数据根本不在仓库目录里。
 
@@ -156,10 +165,12 @@ lib/
   service.js        编排：执行、探测、应用控制
   tools.js          6 只工具定义
   ansi.js           ANSI 解析（模型侧去色 / 面板侧上色）
+  gate-rules.mjs    闸门判据（本地与远端共用唯一真源）
   http.js           小工具
   server-api.js     只读 REST + SSE
 scripts/
-  publish-gate.mjs        发布闸门（IP / 本机路径 / 私钥 / 密码 / token / SSH 端口）
+  publish-gate.mjs        发布闸门（本地：IP / 本机路径 / 私钥 / 密码 / token / SSH 端口）
+  verify-remote.mjs       远端复查（push 后扫 GitHub 上的真实内容，同一套判据）
   gate-selftest.mjs       闸门的对抗性自测（证明它真能拦）
   install-hooks.mjs       装 pre-commit / pre-push 钩子（闸门变硬拦截）
   verify-no-plaintext.mjs 凭证明文闸门
@@ -180,6 +191,8 @@ scripts/
 ## License
 
 MIT
+
+
 
 
 

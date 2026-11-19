@@ -14,15 +14,41 @@
 数据落点永远是 `~/.dsh/ssh-ops/`（见 `lib/paths.js`）。**不要**为了「方便调试」把
 `vaultDir` / `logDir` 指到仓库目录里——那正是 v0.2.x 犯过的错。
 
-## 提交前必做
+## 提交与推送：三道检查，一道都不能省
 
 ```bash
+# ① push 前（钩子自动跑，也可手动）
 node scripts/publish-gate.mjs --all   # 必须 STATUS: OK
-node test-host.mjs && node test-ansi.mjs && node test-client.mjs
-node scripts/verify-no-plaintext.mjs  # 有真实凭证数据时才有意义
+
+# ② push
+git push
+
+# ③ push 之后（**必须手动跑，钩子触发不了这个时机**）
+node scripts/verify-remote.mjs        # 必须 STATUS: OK
 ```
 
-`publish-gate` 非零退出就是**不许提交**，不是「警告一下」。
+### 为什么推完还要查一遍
+
+因为**本地闸门只查它知道的模式**。判据本身有洞时，本地永远显示 OK。
+
+这不是假设 —— 历史上真实发生过：闸门的工作区路径判据只查 `projects`/`credentials` 两个子目录，
+于是一条指向临时目录的路径绕过了闸门，**在首次推送时真的进了 GitHub 上的 `HANDOFF.md`**。
+事后靠「拿远端真实内容再扫一遍」才发现。
+
+所以规矩是：**推完不复查 ＝ 没检查过。**
+
+### 两个脚本共用同一套判据
+
+判据在 `lib/gate-rules.mjs`，`publish-gate`（本地）和 `verify-remote`（远端）都调它。
+不要在两处各写一份 —— 一旦漂移，就会出现「本地说干净、远端其实有」或者反过来。
+
+### `verify-remote` 除了扫内容，还查三件事
+
+1. **本地 HEAD 与远端是否一致** —— 防「本地改好了但没推上去」，那时扫的其实是旧代码；
+2. **commit message** —— 提交历史同样是公开面，别在里面写服务器地址；
+3. **扫描完整性** —— 有文件没读到会报 `INCOMPLETE_SCAN` 并判定不通过，不拿「读了几个」冒充「读完了」。
+
+退出码分三档：`0` 干净、`1` 发现问题、`2` 没查成（网络/API 问题）。**`2` 不算通过。**
 
 ## 测试夹具的写法
 
