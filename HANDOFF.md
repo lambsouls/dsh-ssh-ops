@@ -37,74 +37,44 @@ git 仓库已初始化并完成首次提交，**工作区干净、内容零敏�
    换机器 / 新克隆后要跑一次 `node scripts/install-hooks.mjs`（钩子是本地文件，不随 git 分发）。
 3. **`.gitignore`**（最弱）：只挡「手滑 git add」，挡不住「手工 tar 整个目录」。
 
-## 推送流程（**卡在认证，需主人提供凭据**）
-
-### 当前状态（2026-11-19 20:15）
+## 推送：已完成 ✅
 
 | 项 | 结果 |
 |---|---|
-| 仓库 | ✅ 就绪：`main` 分支、7 个提交、36 个跟踪文件、工作区干净 |
-| remote | ✅ 已设为 `https://github.com/lambsouls/dsh-ssh-ops.git` |
-| GitHub 账号 | ✅ 确认存在（`lambsouls`，14 个公开仓库）；`dsh-ssh-ops` 名字可用 |
-| 闸门 | ✅ `STATUS: OK`（全目录 + 已跟踪文件都过） |
-| **认证** | ❌ **无任何 GitHub 凭据**：凭据管理器无 github 条目、无 `GITHUB_TOKEN`/`GH_TOKEN` 环境变量、工作区无相关凭证 |
-| 网络 | ⚠️ 不稳定：`github.com:443` 约 5 次通 1 次；`api.github.com` 稳定；`ssh(22)` 通但本机无密钥 |
+| 仓库 | https://github.com/lambsouls/dsh-ssh-ops （公开） |
+| 分支 | `main`，跟踪 `origin/main` |
+| 认证 | **SSH 密钥**（`~/.ssh/id_ed25519_github`，无密码短语，已加到 GitHub 账号） |
+| remote | `git@github.com:lambsouls/dsh-ssh-ops.git` |
+| 钩子 | `pre-commit` + `pre-push` 自动跑闸门，已在真实推送时生效过一次 |
+| 内容 | 36 个文件，远端逐文件扫描确认零敏感信息 |
 
-**结论：内容已完全就绪，只差凭据。** 一旦提供，一条命令即可推送。
-
-### 主人需要做的（三选一）
-
-**A. 提供 PAT（最快）**
-在 https://github.com/settings/tokens 建一个 classic token，勾 `repo` 权限，然后告诉我。
-我会用它推一次，推完立刻从 remote URL 里抹掉（不留在 `.git/config`）。
-
-**B. 在这台机器上登录一次**
-任意终端跑一次 `git push`，让 Windows 凭据管理器弹出登录窗口完成授权；
-之后我在同一账号下推送就不需要再问。
-
-**C. 装 gh 并登录**
-```powershell
-winget install GitHub.cli
-gh auth login      # 浏览器授权
-gh repo create dsh-ssh-ops --public --source=. --remote=origin --push
-```
-
-### 推送命令（凭据就位后）
+### 日常推送
 
 ```bash
-cd <本仓库目录>
-node scripts/publish-gate.mjs --all      # 必须 OK
-git -c http.proxy= -c https.proxy= push -u origin main
+git add -A
+git commit -m "..."
+git push          # 钩子会自动跑 publish-gate，不过就推不出去
 ```
 
-> 为什么带 `-c http.proxy=`：全局 `~/.gitconfig` 配了 `http.proxy=127.0.0.1:7890`，
-> 代理没开时 git 会去连一个不存在的端口。本仓库已清空 local 代理，但全局配置仍可能拦。
->
-> 网络不稳，`push` 可能要重试几次。不要用 `--force`，`main` 是空仓库不需要。
+### 换机器 / 新克隆后
 
-### 离线备份
+```bash
+node scripts/install-hooks.mjs    # 钩子是本地文件，不随仓库分发
+```
 
-无凭据时也留了完整仓库快照：本地临时目录下的 `dsh-ssh-ops.bundle`（约 90 KB，含全部提交）。
-在有凭据的机器上 `git clone <bundle文件> dsh-ssh-ops` 即可还原。
+### ⚠️ 这次踩过的坑（记下来别再犯）
 
-### 待确认
-- **GitHub 账号名**：全局 git 身份是 `lambsouls` / `lambsouls@nerveplexus.cn`，
-  但 GitHub 用户名未核实（公开仓库探测因代理未开而失败）。
-- **认证方式**：`credential.helper = manager`（来自 `C:/Program Files/Git/etc/gitconfig`），
-  Windows 凭据管理器里**可能已有**旧凭据。推送时如果直接成功就不用管；要手动配就用 PAT。
-- **代理**：~~127.0.0.1:7890 不通~~ → **已实测：GitHub 直连可用**（`api.github.com` 返回 200）。
-  全局 `~/.gitconfig` 里配了 `http.proxy=127.0.0.1:7890`，代理没开时 git 会失败。
-  本仓库已 `git config --local` 清空代理；若全局仍拦，用 `git -c http.proxy= push`。
-
-### 已修（子代理审查发现，v0.3.0 收尾时）
-1. `/servers/:id` 详情端点曾因路由顺序**永远不可达**（列表分支无条件 return）→ 已把详情分支移到列表之前。
-2. `test-host.mjs` 里有两条**假测试**（`async () => {}` 空跑、断言依赖前序副作用）→ 已重写成
-   真跑 `index.js` 的 `makeExecutor`（缺字段 / 未知字段），并用同一 service 实例断言。
-3. 闸门三个盲区（正斜杠 Windows 路径、纯字母数字密码、SSH 端口）→ 已补，并加 `scripts/gate-selftest.mjs`
-   做对抗性自测（8 项：7 个应拦 + 7 个不该误伤）。
-4. 版本号 0.2.0 → 0.3.0（package.json 与 client.js 之前没跟上）。
-5. `package.json` 的 `files` 里删掉了不存在的 `docs`。
-
+1. **`ssh-keygen -N '""'` 在 PowerShell 里会把引号当成密码** —— 生成出来的私钥带 passphrase，
+   表现为「GitHub 说 Server accepts key，但最终 Permission denied」，非常难查。
+   正确写法：`$empty = ''; ssh-keygen -t ed25519 -f <file> -N $empty`。
+   自查方法：`ssh-keygen -y -f <key>`，**5 秒内返回**才算无密码。
+2. **GCM 的两个登录方式在这台机器上都不可用**：内嵌 WebView2 白屏（官网能上，是内嵌控件的问题）、
+   `github login --device --no-ui` 不输出码直接挂住。**SSH 密钥是唯一走通的路。**
+3. **HTTPS 直连极不稳定**（`github.com:443` 约五次通一次），但 **SSH 通道 3/3 稳定**。
+   另外代理 `127.0.0.1:7890` 开着时 HTTPS 反而正常 —— 注意区分「直连被重置」和「有权限问题」。
+4. **闸门漏过一条本机路径并真的推到了 GitHub**（首次推送后靠 API 复查才发现）：
+   旧判据只查 `projects`/`credentials` 两个子目录，指向工作区临时目录的路径绕过了。
+   已改成工作区路径**无条件拦**，并加回归用例。**教训：推送后仍要用 API 复查远端内容，别只信本地闸门。**
 ## 后续可做的事（按价值排序）
 
 1. **推送仓库**（阻塞在代理 + 账号确认）
@@ -138,3 +108,4 @@ git -c http.proxy= -c https.proxy= push -u origin main
 迁移前的副本仍在工作区的 `credentials\ssh-ops\`（`servers.json` + `master.key`，与新位置内容相同）。
 **主人 2026-11-19 明确要求先保留**。注意：两份主密钥都能解密同一批凭证，多一个可被翻到的面；
 确认新位置稳定后可删除。**不要自动删除它。**
+

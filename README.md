@@ -3,7 +3,7 @@
 > DSH（DeepSeek Harness）插件。集中保管 Linux 服务器凭证，按对话指令走 SSH 执行命令、巡检环境、
 > 管理已装应用；同时在 Web 端提供**只读**的服务器总览与**实时彩色终端**。
 
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![GitHub](https://img.shields.io/badge/GitHub-lambsouls%2Fdsh--ssh--ops-181717?logo=github)](https://github.com/lambsouls/dsh-ssh-ops)
 
 ## 它解决什么
 
@@ -180,6 +180,7 @@ scripts/
 ## License
 
 MIT
+
 
 
 
