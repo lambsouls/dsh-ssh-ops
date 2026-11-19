@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { scanPath } from '../lib/gate-rules.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROBE = path.join(ROOT, '_gate_probe');
@@ -38,6 +39,14 @@ const SHOULD_BLOCK = [
     ['PUBLIC_IP', 'public-ip.js', `const ip = "${realIp}";`],
     ['PRIVATE_KEY', 'private-key.js', `${pemBegin}\nAAAA\n${pemEnd}`],
     ['TOKEN', 'token.js', `const t = "${fakeToken}";`],
+];
+
+// 敏感路径用例：这些文件「内容本身可能很干净」，但只要路径落在这些目录里就不该进仓库。
+// 用 --path 模式测（闸门对路径的判定不看内容）。
+const SHOULD_BLOCK_PATHS = [
+    ['SENSITIVE_PATH', 'profiles/demo-abc123.json', '服务器档案目录'],
+    ['SENSITIVE_PATH', 'vault/servers.json', '凭证库'],
+    ['SENSITIVE_PATH', 'logs/ops-console.ndjson', '操作日志'],
 ];
 
 const SHOULD_PASS = [
@@ -87,6 +96,29 @@ else {
     console.log(clean.out.split('\n').filter((l) => l.includes('→')).slice(0, 10).join('\n'));
     fail += 1;
 }
+
+// 敏感路径判定直接测纯函数：起子进程去测「某个文件在某个目录里」既慢又不稳，
+// 而 scanPath 是纯函数，测它才是测「判据本身」。
+console.log('[3] 敏感路径判据');
+for (const [code, relPath, label] of SHOULD_BLOCK_PATHS) {
+    const hits = scanPath(relPath);
+    if (hits.some((h) => h.code === code && h.detail.includes(label))) {
+        console.log(`  ✓ ${relPath} → ${code}（${label}）`);
+        pass += 1;
+    } else {
+        console.log(`  ✗ ${relPath} 没被拦（期望 ${code} / ${label}，实际 ${JSON.stringify(hits)}）`);
+        fail += 1;
+    }
+}
+// 反向：正常代码路径不该被误判
+const SHOULD_PASS_PATHS = ['index.js', 'lib/profile.js', 'lib/tools.js', 'test-profile.mjs', 'docs/README.md'];
+let pathOk = true;
+for (const p of SHOULD_PASS_PATHS) {
+    const hits = scanPath(p);
+    if (hits.length) { console.log(`  ✗ 误伤正常路径：${p} → ${JSON.stringify(hits)}`); pathOk = false; }
+}
+if (pathOk) { console.log(`  ✓ ${SHOULD_PASS_PATHS.length} 个正常代码路径未被误伤`); pass += 1; }
+else fail += 1;
 
 cleanProbe();
 fs.rmSync(PROBE, { recursive: true, force: true });
