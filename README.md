@@ -145,7 +145,16 @@ node scripts/verify-remote.mjs        # ③ push 后 —— 扫 GitHub 上的真
 ```
 
 `publish-gate` 检查：敏感路径被跟踪、真实公网 IP、本机绝对路径、私钥块、密码字面量、
-token 形状、SSH 端口、仓库目录里存在运行时数据。**任何一条命中就 `STATUS: BLOCK` 并非零退出。**
+token 形状、SSH 端口、**真实 serverId**、仓库目录里存在运行时数据。
+**任何一条命中就 `STATUS: BLOCK` 并非零退出。**
+
+> ⚠️ **闸门 `STATUS: OK` 不等于没泄漏。** 它只查已知的几个模式，查不出「你这次改动引入的问题」。
+> 真实案例：加完功能后闸门两次 OK，人工复审仍发现三类问题（公开面写回私人称呼、
+> 公开文档写进真实 serverId、locale 文案没跟上新功能）。
+> 所以推送前还要做一步人级复审 —— 判据一句话：**闸门守「字符串长什么样」，人守「这句话该不该公开」。**
+
+> **serverId 已经泄露出去了？** `force-push` 消不掉（GitHub 保留不可达对象，用 SHA 仍能访问）。
+> 用 `scripts/reassign-id.mjs` 作废它 —— 旧标识从此不指向任何真实数据。见 `MAINTAINING.md` §6.2。
 
 `verify-remote` 走 GitHub API 把远端文件逐个下载回来，用**同一套判据**（`lib/gate-rules.mjs`）再扫一遍；
 另外核对本地与远端 HEAD 是否一致、扫 commit message、并在有文件没读到时判定「复查不完整」。
@@ -203,9 +212,10 @@ token 形状、SSH 端口、仓库目录里存在运行时数据。**任何一�
 node test-host.mjs       # 32 项：加密/脱敏/凭证库/日志/探测解析/工具契约/参数校验
 node test-profile.mjs    # 25 项：档案归一化/增量合并/删除/一致性/渲染/文件边界
 node test-identity.mjs   # 35 项：改名/标签的改动面（重点测「除此之外什么都没变」）
+node test-reassign.mjs   # 19 项：换 serverId 后凭证库与档案是否仍对得上
 node test-ansi.mjs       # 14 项：ANSI 解析（颜色/256色/真彩/跨行继承）
 node test-client.mjs     # 28 项：客户端静态闸门 + 真渲染（假 React + vm 跑组件）
-node scripts/gate-selftest.mjs  # 13 项：证明发布闸门真能拦、且不误伤合法代码
+node scripts/gate-selftest.mjs  # 16 项：证明发布闸门真能拦、且不误伤合法代码
 
 # 真连一台（会读你给的凭证文件，但只取 host/port/user/password，不打印）
 node test-live.mjs --cred /path/to/cred.json
@@ -240,6 +250,7 @@ scripts/
   verify-no-plaintext.mjs 凭证明文闸门
   import-credentials.mjs  从外部 JSON 批量导入
   migrate-data-dir.mjs    把旧位置数据搬进 ~/.dsh/ssh-ops
+  reassign-id.mjs         给一台服务器换 serverId（旧标识已泄露时作废它）
 ```
 
 ## 已知限制

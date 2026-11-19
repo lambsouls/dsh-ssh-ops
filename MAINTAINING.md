@@ -300,13 +300,14 @@ plugin_manager set_plugin target="include:dsh-ssh-ops" enabled=true
 ## 5. 验证
 
 ```bash
-# 单元与集成（147 项）
+# 单元与集成（171 项）
 node test-host.mjs                # 32 项：加密/脱敏/凭证库/日志/探测解析/工具契约/参数校验
 node test-profile.mjs             # 25 项：档案归一化/增量合并/删除/一致性/渲染/文件边界
 node test-identity.mjs            # 35 项：改名/标签的改动面（重点测「除此之外什么都没变」）
+node test-reassign.mjs            # 19 项：换 serverId 后凭证库与档案是否仍对得上
 node test-ansi.mjs                # 14 项：ANSI 解析（16/256/真彩、跨行继承、SGR 关闭码）
 node test-client.mjs              # 28 项：客户端静态闸门 + 真渲染（假 React + vm 跑组件）
-node scripts/gate-selftest.mjs    # 13 项：闸门对抗性自测
+node scripts/gate-selftest.mjs    # 16 项：闸门对抗性自测（含真实泄漏样本）
 
 # 语法
 node --check client.js && node --check index.js
@@ -336,6 +337,54 @@ node scripts/publish-gate.mjs --all   # ① 本地闸门
 git push                              # ②（pre-push 钩子会自动再跑一次）
 node scripts/verify-remote.mjs        # ③ 远端复查 —— 必须手动
 ```
+
+### ⚠️ 闸门 `STATUS: OK` ≠ 没泄漏（2026-11-19 的教训）
+
+闸门只查**它已知的那几个模式**（公网 IP / 本机路径 / 私钥 / 密码 / token / SSH 端口 / 敏感目录）。
+**它查不出「你这次改动引入的问题」这个层级。** 当天加完两个功能后闸门两次 OK，
+人工复审仍发现三类真问题：
+
+| 问题 | 为什么闸门当时查不出 |
+|---|---|
+| 公开面又写回了私人称呼（23 处），违反之前立过的规矩 | 它不是敏感词表里的模式 |
+| 公开文档里写进真实 serverId + 拓扑特征 | 当时没有这条判据（现已补 `SERVER_ID`） |
+| `locale/*.json` 文案没跟上新功能（仍写「只读」） | 文案过时不触发任何检查 |
+
+**所以推送前要多做一步「人级复审」**，闸门不能替代：
+
+```bash
+# ① 我这次加的每句话，是不是「对任何 clone 的人都成立」？本机事实一律迁去私密文档
+# ② 有没有真实标识混进文档或测试夹具
+git grep -n -E '\b[a-z][a-z0-9-]*-[0-9a-f]{6}\b' -- .      # serverId 形状
+git grep -n -E '[0-9]{1,3}(\.[0-9]{1,3}){3}' -- .          # IP
+# ③ 新功能的文案在所有暴露面都同步了吗（client.js / locale / README / 工具描述）
+# ④ 提交历史也是公开面（verify-remote 会扫 commit message —— 它真的抓到过）
+```
+
+**判据一句话**：闸门守「字符串长什么样」，人守「这句话该不该公开」。两件事不能互相替代。
+
+### 6.2 万一 serverId 已经泄露了
+
+`force-push` **消不掉**它：GitHub 保留不可达对象，用 SHA 仍能直接访问（实测 200）。
+`verify-remote` 也会把含泄露的旧 commit message 报出来 —— 那不是误报，是真的还能读到。
+
+唯一能立即生效的动作是**作废这个标识**：
+
+```bash
+node scripts/reassign-id.mjs --old <旧 id> --reason "为什么作废" --dry   # 先看计划
+node scripts/reassign-id.mjs --old <旧 id> --reason "..."
+```
+
+它同时改两处（任一漏改都会变成「凭证在、档案在，但两者对不上」）：
+
+1. **凭证库**：该条记录换到新 id，**其余字段逐字节不动**；
+2. **档案文件**：改名 + 改 `serverId`，并在时间线插一条 `incident`「旧 id 因泄漏作废」。
+
+之后旧字符串在库里、在文件系统里都找不到任何东西，只在时间线里作为审计痕迹存在。
+**这才是「旧标识不再指向真实数据」的实现方式。**
+
+> 如果泄露的是**凭证**（密码/私钥），那是另一回事：立刻轮换凭证并在档案里记 incident。
+> `reassign-id` 只处理「标识」层，不替代轮换。
 
 ### 为什么推送后还要查一遍
 
