@@ -23,7 +23,6 @@ const scanAll = process.argv.includes('--all');
 
 const PROBLEMS = [];
 const add = (code, detail) => PROBLEMS.push({ code, detail });
-
 /** 允许出现的 IP（示例 / 公共 DNS / 回环 / 保留段）。 */
 const IP_ALLOW = [
     /^127\./,
@@ -140,9 +139,16 @@ for (const f of files) {
 }
 
 // ⑤ 仓库目录里的运行时数据（即使未被跟踪）
+//    --strict-data 是给 pre-push 用的：连「存在但被 ignore 了」也算问题，
+//    因为 ignore 只挡提交，不挡「有人手工 tar 整个目录」。
+const strictData = process.argv.includes('--strict-data');
 for (const dir of ['.runtime', 'vault', 'keys']) {
     const p = path.join(ROOT, dir);
-    if (fs.existsSync(p)) add('DATA_IN_REPO', `${dir}/ 存在于仓库目录内（应放到 ~/.dsh/ssh-ops）`);
+    if (!fs.existsSync(p)) continue;
+    const entries = fs.readdirSync(p).filter((n) => n !== '.gitkeep');
+    if (entries.length === 0) continue;
+    if (strictData) add('DATA_IN_REPO', `${dir}/ 里有 ${entries.length} 个文件（应放到 ~/.dsh/ssh-ops）`);
+    else add('DATA_IN_REPO', `${dir}/ 存在于仓库目录内（应放到 ~/.dsh/ssh-ops）`);
 }
 
 // 汇总

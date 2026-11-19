@@ -12,8 +12,8 @@ git 仓库已初始化并完成首次提交，**工作区干净、内容零敏�
 
 | 项 | 值 |
 |---|---|
-| 本地仓库 | `D:\codex\projects\dsh-ssh-ops`（git 分支 `main`，首次提交 `445a605`） |
-| 安装方式 | desktop profile 里 `link:D:/codex/projects/dsh-ssh-ops`（改代码 + 重载插件即生效） |
+| 本地仓库 | 本文件所在目录（git 分支 `main`，首次提交 `445a605`） |
+| 安装方式 | desktop profile 里以 `link:` 指向本仓库目录（改代码 + 重载插件即生效） |
 | 插件启用 | `include:dsh-ssh-ops`（用 `plugin_manager` 的 `set_plugin` 开关） |
 | 重载方式 | `set_plugin enabled:false` 再 `true`（**不是**重启 DSH） |
 
@@ -33,7 +33,7 @@ git 仓库已初始化并完成首次提交，**工作区干净、内容零敏�
 ## 推送流程（还没做）
 
 ```bash
-cd D:\codex\projects\dsh-ssh-ops
+cd <本仓库目录>
 
 # 1) 闸门必须先过（非零退出 = 不许推）
 node scripts/publish-gate.mjs --all
@@ -59,8 +59,7 @@ git push -u origin main
 
 1. **推送仓库**（阻塞在代理 + 账号确认）
 2. **补 GitHub Actions**：push 时自动跑 `publish-gate` + 三套自测（防止以后又把敏感东西带进来）
-3. **截图脱敏后放回 README**：当前截图里有真实 IP/端口/主机名，已移出仓库到
-   `D:\codex\.tmp\ssh-ops-screenshot-local.png`。要做文档图就得先遮掉。
+3. **截图脱敏后放回 README**：当前截图里有真实 IP/端口/主机名，已移出仓库（存到本地临时目录）。要做文档图就得先遮掉。
 4. **密钥认证的端到端测试**：目前只测了「假私钥能入库+能脱敏」，没真用密钥连过一台。
 5. **Windows DPAPI 支持**：现在主密钥和密文同目录，加上 DPAPI 能提升到「同机其他账户也读不出」。
 
@@ -82,3 +81,4 @@ git push -u origin main
 | compose 项目与容器重复 | 面板出现两行同名 | 有同名容器就不再另立项目行 |
 | NAS 的 `lan` 字段是网段 | `192.168.0.0/24` 当 host 连不上 | 优先 `host`，否则从 `webui` 解析 |
 | PowerShell 展开 `${}` | `Set-Content` 把 JS 模板字符串吃掉 | 用文件读写工具改代码，别用 PS 替换 |
+
