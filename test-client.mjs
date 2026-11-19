@@ -80,8 +80,15 @@ ok('档案不在展开区里铺开，只留一个入口按钮', () => {
         assert.ok(!client.includes(marker), `档案分区样式 ${marker} 不该还留在面板里`);
     }
 });
-ok('档案入口带 noopener/noreferrer（新页面拿不到本页引用）', () => {
-    assert.ok(client.includes('noopener,noreferrer'), '缺 noopener/noreferrer');
+ok('档案入口不再用 window.open（Electron 会静默拦掉它）', () => {
+    // 曾经的实现：window.open(url, '_blank', 'noopener,noreferrer')
+    // 实测在 DSH 的 Electron 里点了完全没反应 —— 按钮有焦点框、窗口列表无变化、无报错。
+    // 原因是宿主没配 setWindowOpenHandler，Electron 默认拒绝新建窗口，
+    // 而 window.open 被拒时不抛异常，所以 try/catch 也兜不住。
+    // 现在改成壳内抽屉（渲染进 shell.overlay），这里守住「别退回旧写法」。
+    const code = client.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    assert.ok(!code.includes('window.open('), '不许再用 window.open 打开档案（Electron 会静默拦截）');
+    assert.ok(code.includes("'shell.overlay'"), '档案抽屉应注册在 shell.overlay（面板内 fixed 会被容器限制）');
 });
 
 // ── 真的把组件跑起来 ────────────────────────────────────────────────────
@@ -234,6 +241,67 @@ ok('空清单不崩', () => {
     reset();
     const tree = internals.ServersView({ data: { count: 0, servers: [] }, loading: false, error: null, t: T });
     assert.ok(texts(tree).join(' ').includes('无服务器'));
+});
+
+// ── 档案抽屉 ────────────────────────────────────────────────────────────
+// 这一组是为了守住一次真实的回归：档案按钮曾经用 window.open 打开，
+// 在 Electron 里点了**完全没反应**（无新窗口、无报错）。改成壳内抽屉后必须能真渲染出内容。
+const PROFILE_SAMPLE = {
+    version: 1, serverId: 'demo-1', name: '演示机',
+    summary: '这是概要', role: '角色说明',
+    traits: [
+        { id: 't1', title: '共享公网 IP', severity: 'warn', source: 'owner', detail: '和别的租户共用', impact: '不要盲扫端口' },
+    ],
+    portMap: [{ id: 'p1', public: 10556, internal: 22, app: 'ssh', proto: 'tcp', note: '只在办公网' }],
+    constraints: [{ id: 'c1', text: '不要 docker pull', severity: 'critical', source: 'owner' }],
+    runbooks: [{ id: 'r1', name: '重启流程', when: '服务卡住时', steps: ['第一步', '第二步'] }],
+    timeline: [{ at: '2026-11-19T12:00:00Z', kind: 'change', text: '改过端口' }],
+    openQuestions: ['对外端口是多少？'],
+    updatedAt: '2026-11-19T12:00:00Z',
+};
+
+ok('档案抽屉：结构能渲染（含标题/关闭按钮）', () => {
+    reset();
+    // 注意：假 React 里 useEffect 不执行，所以 fetch 后的数据加载不会发生 ——
+    // 这里只能验证「外壳」渲染正常。分区内容的验证走下面的源码级检查。
+    const tree = internals.ProfileDrawer({ server: SAMPLE_SERVER, t: T, onClose: () => {} });
+    const all = texts(tree).join(' ');
+    assert.ok(all.includes('演示机'), '应有服务器名');
+    assert.ok(all.includes('档案'), '应标注是档案');
+    assert.ok(tree, '不该返回空');
+});
+
+ok('档案抽屉：六个分区都在源码里（真渲染受假 React 限制，改查结构）', () => {
+    const src = client.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    for (const key of ['profileTraits', 'profilePortMap', 'profileConstraints', 'profileRunbooks', 'profileTimeline', 'profileQuestions']) {
+        assert.ok(src.includes(key), `缺分区 ${key}`);
+    }
+    // 分级标签要映射到主题色
+    for (const sev of ['so-pf-sev--warn', 'so-pf-sev--critical', 'so-pf-sev--info']) {
+        assert.ok(src.includes(sev), `缺分级样式 ${sev}`);
+    }
+});
+
+ok('档案抽屉：空分区不渲染（避免「0 /（无）」的空壳）', () => {
+    reset();
+    const empty = { ...PROFILE_SAMPLE, portMap: [], constraints: [], runbooks: [], timeline: [], openQuestions: [], traits: [] };
+    // 直接测渲染器接受空数组时不崩
+    const tree = internals.ProfileDrawer({ server: { ...SAMPLE_SERVER, profile: empty }, t: T, onClose: () => {} });
+    assert.ok(tree, '空档案也不该崩');
+    const src = client.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    // 分区必须包在 `(p.xxx ?? []).length ? ... : null` 里，不能无条件渲染
+    for (const key of ['portMap', 'constraints', 'runbooks', 'timeline']) {
+        assert.ok(
+            new RegExp(`\\(p\\.${key} \\?\\? \\[\\]\\)\\.length`).test(src),
+            `${key} 分区应在为空时不渲染`,
+        );
+    }
+});
+
+ok('overlay 条目订阅了 store（点击按钮才能通知到浮层）', () => {
+    const src = client.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    assert.ok(src.includes('profileStore.subscribe'), 'ProfileOverlay 应订阅 store');
+    assert.ok(src.includes('profileStore.open('), '点按钮应调用 store.open');
 });
 
 ok('完整面板能渲染（两种容器形态都试）', () => {

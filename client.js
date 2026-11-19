@@ -54,7 +54,21 @@ window.__ModuleLoader__.load({
                 following: '跟随中',
                 wrap: '折行',
                 profile: '档案',
-                openProfile: '在新标签页查看档案',
+                openProfile: '查看档案',
+                close: '关闭',
+                profileCopy: '复制地址',
+                profileCopyHint: '复制档案页地址（可粘到浏览器打开）',
+                profileRole: '角色',
+                profileTraits: '专属特征',
+                profilePortMap: '对外端口 → 内部',
+                profileConstraints: '硬约束 / 不要碰',
+                profileRunbooks: '常用处置',
+                profileTimeline: '时间线',
+                profileQuestions: '待确认',
+                profileImpact: '影响',
+                profileEvidence: '依据',
+                profileNone: '（无）',
+                profileMissing: '这台服务器还没有档案。在对话里让 DSH 记录它的独有特征即可。',
                 traits: '专属特征',
                 portMap: '对外端口 → 内部',
                 constraints: '硬约束',
@@ -104,7 +118,21 @@ window.__ModuleLoader__.load({
                 following: 'Following',
                 wrap: 'Wrap',
                 profile: 'Profile',
-                openProfile: 'Open profile in a new tab',
+                openProfile: 'View profile',
+                close: 'Close',
+                profileCopy: 'Copy URL',
+                profileCopyHint: 'Copy the profile page URL (paste into a browser)',
+                profileRole: 'Role',
+                profileTraits: 'Traits',
+                profilePortMap: 'Public → internal port',
+                profileConstraints: 'Hard constraints',
+                profileRunbooks: 'Runbooks',
+                profileTimeline: 'Timeline',
+                profileQuestions: 'Open questions',
+                profileImpact: 'Impact',
+                profileEvidence: 'Evidence',
+                profileNone: '(none)',
+                profileMissing: 'No profile for this server yet. Ask the agent to record its traits.',
                 traits: 'Traits',
                 portMap: 'Public → internal',
                 constraints: 'Constraints',
@@ -422,6 +450,111 @@ window.__ModuleLoader__.load({
 .so-line--stream-close .so-line-text { color: #6e7681; }
 .so-cursor { display: inline-block; width: 6px; height: 12px; background: #7ee787; vertical-align: -1px; animation: so-blink 1.1s steps(1) infinite; }
 @keyframes so-blink { 50% { opacity: 0; } }
+
+/* ── 档案抽屉 ──
+   渲染在 shell.overlay（框架级浮层），不在面板内部：面板是带 transform 的滚动容器，
+   position:fixed 在里面会被限制在容器内，遮罩盖不满整个窗口。 */
+.so-pf-host {
+  /* 主题变量必须在这一层重新声明：overlay 渲染在 .so-root 之外，
+     继承不到 --so-* ，面板会变成「有边框没底色」甚至整块透明。 */
+  --so-bg: var(--dsw-alias-bg-base);
+  --so-surface: var(--dsw-alias-bg-layer-1);
+  --so-surface2: var(--dsw-alias-bg-layer-2);
+  --so-line: var(--dsw-alias-border-l1);
+  --so-line2: var(--dsw-alias-border-l2);
+  --so-text: var(--dsw-alias-label-primary);
+  --so-dim: var(--dsw-alias-label-secondary);
+  --so-accent: var(--dsw-alias-brand-primary);
+  --so-ok: var(--dsw-alias-state-success-primary);
+  --so-warn: var(--dsw-alias-state-warn-primary);
+  --so-bad: var(--dsw-alias-state-error-primary);
+  --so-idle: var(--dsw-alias-state-idle-primary);
+  /* 遮罩与内容放在同一个节点上：shell.overlay 的容器本身可能是零尺寸，
+     把背景铺在容器里不会显示（第一版就是这样：抽屉居中、背景没变暗）。
+     所以背景必须由这一层自己画，并用视口单位撑满。 */
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  z-index: 200;
+  /* 用**不透明**深色：半透明背景在部分合成路径下会整层被跳过（实测抓不到）。
+     模态框不需要透视底部，不透明更稳。 */
+  background: #0b0e13;
+  color: var(--so-text);
+  font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  /* shell.overlay 本身是 click-through 的，条目要自己 opt-in */
+  pointer-events: auto;
+}
+.so-pf-overlay { display: contents; }
+.so-pf-panel {
+  /* 面板底要明确：继承来的 --so-bg 在部分主题下是半透明层，
+     叠在深色遮罩上会让整张面板看起来发灰。这里直接给不透明面。 */
+  background: var(--so-surface);
+  border: 1px solid var(--so-line2);
+  border-radius: 11px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .34);
+  width: min(760px, 100%); max-height: min(80vh, 100%);
+  display: flex; flex-direction: column; min-height: 0;
+  color: var(--so-text);
+}
+.so-pf-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 11px 14px; border-bottom: 1px solid var(--so-line); flex: none;
+}
+.so-pf-head-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.so-pf-title { font-size: 14px; font-weight: 600; }
+.so-pf-sub { font-size: 11px; color: var(--so-dim); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.so-pf-body { padding: 12px 14px 18px; overflow: auto; min-height: 0; }
+.so-pf-summary {
+  border: 1px solid var(--so-line); border-radius: 8px;
+  background: var(--so-surface); padding: 9px 11px; margin-bottom: 12px;
+}
+.so-pf-summary-text { font-size: 12px; line-height: 1.6; }
+.so-pf-section { margin-bottom: 15px; }
+.so-pf-h2 {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; font-weight: 600; letter-spacing: .05em;
+  color: var(--so-dim); text-transform: uppercase;
+  margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--so-line);
+}
+.so-pf-count {
+  font-size: 10px; border: 1px solid var(--so-line); border-radius: 999px;
+  padding: 0 5px; color: var(--so-dim); font-weight: 400; letter-spacing: 0;
+}
+.so-pf-list { display: flex; flex-direction: column; gap: 6px; }
+.so-pf-item {
+  border: 1px solid var(--so-line); border-radius: 7px;
+  background: var(--so-surface); padding: 7px 9px;
+}
+.so-pf-item--tight { padding: 5px 9px; }
+.so-pf-item-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 3px; }
+.so-pf-item-title { font-size: 12px; font-weight: 600; }
+.so-pf-text { font-size: 11.5px; line-height: 1.6; color: var(--so-text); }
+.so-pf-meta { font-size: 10.5px; color: var(--so-dim); line-height: 1.55; margin-top: 3px; }
+.so-pf-src {
+  font-size: 9.5px; color: var(--so-dim);
+  border: 1px solid var(--so-line); border-radius: 4px; padding: 0 4px;
+}
+.so-pf-sev {
+  font-size: 9.5px; border-radius: 4px; padding: 0 5px;
+  border: 1px solid currentColor; text-transform: uppercase; letter-spacing: .03em;
+}
+.so-pf-sev--info { color: var(--so-accent); }
+.so-pf-sev--note { color: var(--so-dim); }
+.so-pf-sev--warn { color: var(--so-warn); }
+.so-pf-sev--critical { color: var(--so-bad); }
+.so-pf-sev--change { color: var(--so-accent); }
+.so-pf-sev--incident { color: var(--so-bad); }
+.so-pf-sev--decision { color: var(--so-ok); }
+.so-pf-port {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px; color: var(--so-accent);
+}
+.so-pf-steps { margin: 4px 0 0; padding-left: 18px; font-size: 11.5px; line-height: 1.65; }
+.so-pf-steps li { margin-bottom: 2px; }
+.so-pf-empty { font-size: 11px; color: var(--so-dim); padding: 3px 0; }
 `;
 
         // ── 小组件 ───────────────────────────────────────────────────────
@@ -549,7 +682,7 @@ window.__ModuleLoader__.load({
                     }, busy ? t.saving : t.save)));
         }
 
-        function ServerRow({ s, t, onRenamed }) {
+        function ServerRow({ s, t, onRenamed, onOpenProfile }) {
             const [open, setOpen] = useState(false);
             const [editing, setEditing] = useState(false);
             const toggle = () => setOpen((v) => !v);
@@ -557,23 +690,16 @@ window.__ModuleLoader__.load({
             const stateTitle = s.reachable === true ? 'reachable' : s.reachable === false ? 'unreachable' : t.unknown;
 
             /**
-             * 打开档案页面。
+             * 打开档案。**在面板内开抽屉，不用 window.open。**
              *
-             * 档案是**给 DSH 自己看的**（它决定「动手前先读什么」），对用户多数时候不需要，
-             * 而且七个分区铺在服务器行里就是一大坨。所以改成：行里只给一个入口，
-             * 需要时开新标签页慢慢看。**不往展开区里塞。**
-             *
-             * 三个细节：
-             *   · `noopener,noreferrer` —— 新页面拿不到 window.opener，也收不到本页地址；
-             *   · 带上 fence 参数 —— 页面端点同样受跨站防护，直接导航（而非 fetch）没法带自定义头，
-             *     所以那一个端点额外接受 `?fence=1`（与 SSE 同一处理方式）；
-             *   · 如果没有档案，按钮不出现 —— 点开一个空页面没有意义。
+             * 历史：最早这里是 `window.open(url, '_blank')`，结果是**点了完全没反应** ——
+             * 按钮有焦点框、窗口列表毫无变化、console 也没有报错。原因是 Electron 对未配
+             * `setWindowOpenHandler` 的新窗口一律静默拒绝，而 `window.open` 被拒时**不抛异常**，
+             * 所以 try/catch 也兜不住。改成面板内抽屉后不再依赖宿主的新窗口策略。
              */
             const openProfile = (e) => {
                 e.stopPropagation();
-                const url = `${API}/servers/${encodeURIComponent(s.id)}/profile?fence=1`;
-                try { window.open(url, '_blank', 'noopener,noreferrer'); }
-                catch { /* 被弹窗拦截；用户可重试 */ }
+                onOpenProfile?.(s);
             };
 
             const head = h('div', {
@@ -642,6 +768,193 @@ window.__ModuleLoader__.load({
                     h(AppList, { apps: s.apps, t })));
         }
 
+        // ── 档案抽屉的跨槽位状态 ──────────────────────────────────────────
+        /**
+         * 为什么需要这个 store：抽屉必须渲染在 **`shell.overlay`** 里，不能渲染在面板内部。
+         *
+         * 面板位于右侧栏，那是一个带 `transform` / `overflow` 的滚动容器 ——
+         * `position: fixed` 在里面会被限制成「相对容器定位」，于是遮罩盖不满、弹窗偏在一边。
+         * （第一版就是这么错的：截图里抽屉只占右栏那一块，左上和右边都露着底色。）
+         *
+         * 而打开抽屉的按钮在面板里、抽屉本体要在 overlay 里，两者是不同的槽位，
+         * 没法直接用 React 的父子 props 传递。所以用一个极小的发布订阅把「当前要看哪台」
+         * 从面板传给 overlay 条目。
+         */
+        const profileStore = (() => {
+            let current = null;              // 当前要展示的 server，null = 关闭
+            const listeners = new Set();
+            const emit = () => { for (const fn of listeners) { try { fn(current); } catch { /* ignore */ } } };
+            return {
+                get: () => current,
+                subscribe(fn) {
+                    listeners.add(fn);
+                    return () => listeners.delete(fn);
+                },
+                open(server) { current = server; emit(); },
+                close() { current = null; emit(); },
+            };
+        })();
+
+        // ── 档案抽屉 ─────────────────────────────────────────────────────
+        /**
+         * 在面板内展示一台服务器的档案（覆盖层，不离开当前界面）。
+         *
+         * 为什么不用 `window.open`：**Electron 会静默拦掉它**。
+         * 实测点「档案 ↗」→ 按钮出现焦点框、但窗口列表毫无变化、也没有任何报错。
+         * 原因是宿主没有为这个 URL 配 `setWindowOpenHandler`，Electron 默认拒绝新建窗口。
+         * 而 `window.open` 被拒时**不会抛异常**，所以 `try/catch` 也兜不住 —— 只能换方案。
+         *
+         * 所以改成：面板内原生渲染档案数据（走 `/servers/:id` 的 JSON，不是那份独立 HTML 页），
+         * 这样不依赖新窗口、不依赖 iframe、还能直接用宿主的主题令牌。
+         * 独立 HTML 页仍然保留（`/servers/:id/profile`），供用户手动复制地址或在浏览器里打开。
+         */
+        function ProfileDrawer({ server, t, onClose }) {
+            const [data, setData] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                let alive = true;
+                setLoading(true);
+                setError(null);
+                api(`/servers/${encodeURIComponent(server.id)}`)
+                    .then((value) => { if (alive) { setData(value); setLoading(false); } })
+                    .catch((e) => { if (alive) { setError(String(e?.message ?? e)); setLoading(false); } });
+                return () => { alive = false; };
+            }, [server.id]);
+
+            // Esc 关闭
+            useEffect(() => {
+                const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+                window.addEventListener('keydown', onKey);
+                return () => window.removeEventListener('keydown', onKey);
+            }, [onClose]);
+
+            const p = data?.profile ?? null;
+            const profileUrl = `${API}/servers/${encodeURIComponent(server.id)}/profile?fence=1`;
+
+            const section = (title, count, body) => h('section', { className: 'so-pf-section' },
+                h('div', { className: 'so-pf-h2' },
+                    title,
+                    typeof count === 'number' ? h('span', { className: 'so-pf-count' }, String(count)) : null),
+                body);
+
+            const empty = (msg) => h('div', { className: 'so-pf-empty' }, msg);
+
+            const renderTraits = (traits) => (traits.length === 0 ? empty(t.profileNone)
+                : h('div', { className: 'so-pf-list' }, traits.map((tr, i) => h('div', {
+                    className: 'so-pf-item', key: tr.id ?? i,
+                },
+                    h('div', { className: 'so-pf-item-head' },
+                        h('span', { className: `so-pf-sev so-pf-sev--${tr.severity ?? 'note'}` }, tr.severity ?? 'note'),
+                        h('span', { className: 'so-pf-item-title' }, tr.title ?? ''),
+                        tr.source ? h('span', { className: 'so-pf-src' }, tr.source) : null),
+                    tr.detail ? h('div', { className: 'so-pf-text' }, tr.detail) : null,
+                    tr.impact ? h('div', { className: 'so-pf-meta' }, `${t.profileImpact}：${tr.impact}`) : null,
+                    tr.evidence ? h('div', { className: 'so-pf-meta' }, `${t.profileEvidence}：${tr.evidence}`) : null))));
+
+            const renderPortMap = (rows) => (rows.length === 0 ? empty(t.profileNone)
+                : h('div', { className: 'so-pf-list' }, rows.map((r, i) => h('div', {
+                    className: 'so-pf-item', key: r.id ?? i,
+                },
+                    h('div', { className: 'so-pf-item-head' },
+                        h('span', { className: 'so-pf-port' }, `${r.public ?? '?'} → ${r.internal ?? '?'}`),
+                        h('span', { className: 'so-pf-item-title' }, r.app ?? ''),
+                        r.proto ? h('span', { className: 'so-pf-src' }, r.proto) : null),
+                    r.note ? h('div', { className: 'so-pf-text' }, r.note) : null))));
+
+            const renderConstraints = (rows) => (rows.length === 0 ? empty(t.profileNone)
+                : h('div', { className: 'so-pf-list' }, rows.map((c, i) => h('div', {
+                    className: 'so-pf-item', key: c.id ?? i,
+                },
+                    h('div', { className: 'so-pf-item-head' },
+                        h('span', { className: `so-pf-sev so-pf-sev--${c.severity ?? 'warn'}` }, c.severity ?? 'warn'),
+                        c.source ? h('span', { className: 'so-pf-src' }, c.source) : null),
+                    h('div', { className: 'so-pf-text' }, c.text ?? '')))));
+
+            const renderRunbooks = (rows) => (rows.length === 0 ? empty(t.profileNone)
+                : h('div', { className: 'so-pf-list' }, rows.map((r, i) => h('div', {
+                    className: 'so-pf-item', key: r.id ?? i,
+                },
+                    h('div', { className: 'so-pf-item-head' },
+                        h('span', { className: 'so-pf-item-title' }, r.name ?? ''),
+                        r.verifiedAt ? h('span', { className: 'so-pf-src' }, r.verifiedAt) : null),
+                    r.when ? h('div', { className: 'so-pf-text' }, r.when) : null,
+                    (r.steps ?? []).length
+                        ? h('ol', { className: 'so-pf-steps' }, (r.steps ?? []).map((st, j) => h('li', { key: j }, st)))
+                        : null))));
+
+            const renderTimeline = (rows) => (rows.length === 0 ? empty(t.profileNone)
+                : h('div', { className: 'so-pf-list' }, rows.map((e, i) => h('div', {
+                    className: 'so-pf-item so-pf-item--tight', key: i,
+                },
+                    h('div', { className: 'so-pf-item-head' },
+                        h('span', { className: 'so-pf-src' }, String(e.at ?? '').slice(0, 10)),
+                        h('span', { className: `so-pf-sev so-pf-sev--${e.kind ?? 'note'}` }, e.kind ?? 'note')),
+                    h('div', { className: 'so-pf-text' }, e.text ?? '')))));
+
+            const body = loading
+                ? h('div', { className: 'so-loading' }, t.loading)
+                : error
+                    ? h('div', { className: 'so-error' }, `${t.failed}：${error}`)
+                    : h('div', { className: 'so-pf-body' },
+                        // 概要
+                        p?.summary || p?.role
+                            ? h('div', { className: 'so-pf-summary' },
+                                p.summary ? h('div', { className: 'so-pf-summary-text' }, p.summary) : null,
+                                p.role ? h('div', { className: 'so-pf-meta' }, `${t.profileRole}：${p.role}`) : null)
+                            : null,
+                        p
+                            ? h('div', null,
+                                // 空分区不渲染：一个「对外端口 → 内部 0 /（无）」的空壳只是噪音。
+                                // 只有 traits 例外 —— 一台全新服务器「还没有特征」本身是有信息量的。
+                                section(t.profileTraits, (p.traits ?? []).length, renderTraits(p.traits ?? [])),
+                                (p.portMap ?? []).length
+                                    ? section(t.profilePortMap, p.portMap.length, renderPortMap(p.portMap))
+                                    : null,
+                                (p.constraints ?? []).length
+                                    ? section(t.profileConstraints, p.constraints.length, renderConstraints(p.constraints))
+                                    : null,
+                                (p.runbooks ?? []).length
+                                    ? section(t.profileRunbooks, p.runbooks.length, renderRunbooks(p.runbooks))
+                                    : null,
+                                (p.timeline ?? []).length
+                                    ? section(t.profileTimeline, p.timeline.length, renderTimeline(p.timeline))
+                                    : null,
+                                (p.openQuestions ?? []).length
+                                    ? section(t.profileQuestions, p.openQuestions.length,
+                                        h('ul', { className: 'so-pf-steps' }, p.openQuestions.map((q, i) => h('li', { key: i }, q))))
+                                    : null,
+                                p.updatedAt ? h('div', { className: 'so-pf-meta' }, `${t.profileUpdated}：${String(p.updatedAt).slice(0, 16).replace('T', ' ')}`) : null,
+                            )
+                            : empty(t.profileMissing));
+
+            return h('div', {
+                className: 'so-pf-overlay',
+                role: 'dialog', 'aria-modal': 'true', 'aria-label': `${server.name} ${t.profile}`,
+                onClick: (e) => { if (e.target === e.currentTarget) onClose(); },
+            },
+                h('div', { className: 'so-pf-panel' },
+                    h('div', { className: 'so-pf-head' },
+                        h('div', { className: 'so-pf-head-text' },
+                            h('div', { className: 'so-pf-title' }, `${server.name}`),
+                            h('div', { className: 'so-pf-sub' }, `${t.profile} · ${server.user}@${server.host}:${server.port}`)),
+                        h('span', { className: 'so-head-spacer' }),
+                        h('button', {
+                            className: 'so-btn so-btn--mini', type: 'button',
+                            title: t.profileCopyHint,
+                            onClick: (e) => {
+                                e.stopPropagation();
+                                try {
+                                    // 独立页面地址：可以粘到浏览器里看（那里不受 Electron 新窗口限制）
+                                    navigator.clipboard?.writeText(new URL(profileUrl, location.origin).href);
+                                } catch { /* 剪贴板不可用就忽略 */ }
+                            },
+                        }, t.profileCopy),
+                        h('button', { className: 'so-btn so-btn--mini', type: 'button', onClick: onClose }, t.close)),
+                    body));
+        }
+
         function ServersView({ data, loading, error, t, onRenamed }) {
             if (loading && !data) return h('div', { className: 'so-loading' }, t.loading);
             return h('div', null,
@@ -649,7 +962,25 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'so-hint' }, t.inventoryHint),
                 (!data || data.count === 0)
                     ? h('div', { className: 'so-empty' }, t.noServers)
-                    : data.servers.map((s) => h(ServerRow, { key: s.id, s, t, onRenamed })));
+                    : data.servers.map((s) => h(ServerRow, {
+                        key: s.id, s, t, onRenamed,
+                        // 抽屉渲染在 shell.overlay 里，这里只负责「说要看哪台」
+                        onOpenProfile: (server) => profileStore.open(server),
+                    })));
+        }
+
+        /**
+         * overlay 条目：真正渲染抽屉的地方。
+         * 订阅 profileStore，面板里点「档案」→ 这里收到通知 → 在整个 frame 上盖一层。
+         */
+        function ProfileOverlay() {
+            const t = COPY[pickLocale()];
+            const [server, setServer] = useState(() => profileStore.get());
+            useEffect(() => profileStore.subscribe(setServer), []);
+            if (!server) return null;
+            return h('div', { className: 'so-pf-host' },
+                h('style', null, CSS),
+                h(ProfileDrawer, { server, t, onClose: () => profileStore.close() }));
         }
 
         // ── 终端 ─────────────────────────────────────────────────────────
@@ -871,6 +1202,17 @@ window.__ModuleLoader__.load({
         function apply(ctx) {
             console.info(`[dsh-ssh-ops] client apply v${PLUGIN_VERSION}`);
 
+            // ① 档案抽屉：渲染在框架级浮层 shell.overlay 里（面板内 fixed 会被容器限制）
+            try {
+                ctx.effect(() => ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+                    name: 'shell.overlay',
+                    id: 'dsh-ssh-ops.profile',
+                    order: 40,
+                }, ProfileOverlay)), 'dsh-ssh-ops: 档案浮层');
+            } catch (error) {
+                console.warn('[dsh-ssh-ops] 档案浮层注册失败', error);
+            }
+
             // ① 右侧栏 tab：类型声明 + 内容
             try {
                 if (ctx.sidebarRightTabs && typeof ctx.sidebarRightTabs.register === 'function') {
@@ -934,7 +1276,7 @@ window.__ModuleLoader__.load({
             }
         }
 
-        return { inject, apply, __internals: { OpsBody, Panel, RightTab, ServersView, ConsoleView, ServerRow, IdentityEditor, AppList, CSS, PANEL_ID, TAB_ID, TAB_KIND, parseAnsi } };
+        return { inject, apply, __internals: { OpsBody, Panel, RightTab, ServersView, ConsoleView, ServerRow, IdentityEditor, AppList, ProfileDrawer, ProfileOverlay, profileStore, CSS, PANEL_ID, TAB_ID, TAB_KIND, parseAnsi } };
     },
 });
 
