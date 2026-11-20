@@ -104,6 +104,21 @@ def connect(req, client):
     client.connect(**kwargs)
 
 
+def remote_hostname(client):
+    """
+    在同一条已建立的连接上再开一个 channel 取主机名（不额外建连接，约几十毫秒）。
+
+    控制台要把输入行画成真终端的样子（`用户@主机:~#`），主机名只有远端知道；
+    拿不到就返回空串，调用方退回用地址显示 —— **不能因为这一步失败就中断命令**。
+    """
+    try:
+        _in, out, _err = client.exec_command("hostname 2>/dev/null || cat /etc/hostname 2>/dev/null", timeout=5)
+        name = out.read(256).decode("utf-8", "replace").strip().splitlines()
+        return name[0].strip() if name else ""
+    except Exception:
+        return ""
+
+
 def classify(exc):
     name = type(exc).__name__
     text = str(exc)
@@ -143,7 +158,8 @@ def run(req):
             pass
         return 2
 
-    emit({"t": "begin", "host": req["host"], "port": int(req.get("port") or 22), "user": req["user"]})
+    emit({"t": "begin", "host": req["host"], "port": int(req.get("port") or 22), "user": req["user"],
+          "hostname": remote_hostname(client)})
 
     wrapped = "bash -lc %s" % quote(command) if login_shell else command
     try:

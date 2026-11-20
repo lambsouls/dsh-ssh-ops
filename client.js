@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
         const PANEL_ID = 'dsh-ssh-ops';
         const TAB_ID = 'dsh-ssh-ops';
         const TAB_KIND = 'ssh-ops';
-        const PLUGIN_VERSION = '0.6.2';
+        const PLUGIN_VERSION = '0.7.0';
 
         // ── 文案 ─────────────────────────────────────────────────────────
         const COPY = {
@@ -36,7 +36,7 @@ window.__ModuleLoader__.load({
                 refresh: '刷新',
                 inventoryHint: '展开一行可看这台机器上能管什么。名字和标签可直接改；档案点 ↗ 新标签页看；动服务器本身在对话里说。',
                 noServers: '还没有登记服务器。在对话里让我加一台即可。',
-                consoleHint: '所有服务器操作的实时输入与输出。凭证显示为 ******。',
+                consoleHint: '蓝＝连上了哪台；绿＝这次要跑的命令（带 用户名@主机:~# 提示符，普通用户是 $）；其余是远端输出。同一台机器连续操作只报一次连接。凭证显示为 ******。',
                 consoleEmpty: '还没有任何操作。',
                 filter: '过滤…',
                 clear: '清空视图',
@@ -100,7 +100,7 @@ window.__ModuleLoader__.load({
                 refresh: 'Refresh',
                 inventoryHint: 'Expand a row to see what this agent can manage. Name and tags are editable here; ↗ opens the profile in a new tab; ask in chat to change anything on the server.',
                 noServers: 'No servers registered yet. Ask the agent in chat to add one.',
-                consoleHint: 'Live input and output of every server operation. Credentials appear as ******.',
+                consoleHint: 'Blue = which host is connected; green = the command being run (with a user@host:~# prompt, $ for non-root); everything else is remote output. Reconnecting to the same host is reported once. Credentials appear as ******.',
                 consoleEmpty: 'No operations yet.',
                 filter: 'Filter…',
                 clear: 'Clear view',
@@ -444,10 +444,18 @@ window.__ModuleLoader__.load({
 .so-root--right .so-line-time { font-size: 9.5px; }
 .so-line-text { flex: 1 1 auto; min-width: 0; }
 .so-line--meta .so-line-text { color: #58a6ff; }
+/* 输入行：照真终端 —— 提示符是「环境信息」用暗青，命令是本轮要执行的东西用亮绿加粗。
+   两者分开着色，用户扫一眼就知道哪半句是自己（或模型）要跑的命令。 */
 .so-line--input .so-line-text { color: #7ee787; font-weight: 700; }
+.so-line--input .so-line-prompt { color: #56d4dd; font-weight: 400; margin-right: 6px; user-select: none; }
+.so-line--input .so-cmd { color: #7ee787; font-weight: 700; }
+.so-line--note .so-line-text { color: #6e7681; font-style: italic; }
 .so-line--stderr .so-line-text { color: #ffa657; }
 .so-line--stream-fail .so-line-text, .so-line--error .so-line-text { color: #ff7b72; }
 .so-line--stream-close .so-line-text { color: #6e7681; }
+/* 会话头：一次连续操作只出现一次，用稍亮的蓝 + 分隔感，避免与普通提示混在一起 */
+.so-line--stream-open { margin-top: 6px; }
+.so-line--stream-open .so-line-text { color: #58a6ff; }
 .so-cursor { display: inline-block; width: 6px; height: 12px; background: #7ee787; vertical-align: -1px; animation: so-blink 1.1s steps(1) infinite; }
 @keyframes so-blink { 50% { opacity: 0; } }
 
@@ -725,8 +733,7 @@ window.__ModuleLoader__.load({
                         onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); } },
                     }, `${t.profile} ↗`)
                     : null,
-                h('span', { className: 'so-badge so-badge--accent' }, `${s.appCount} ${t.apps}`),
-                s.systemAppCount ? h('span', { className: 'so-badge' }, `+${s.systemAppCount}`) : null);
+                h('span', { className: 'so-badge so-badge--accent' }, `${s.appCount} ${t.apps}`));
 
             if (!open) return h('div', { className: 'so-srv' }, head);
 
@@ -990,10 +997,22 @@ window.__ModuleLoader__.load({
             // 同一条流里跨行的颜色要延续：用「远程输出」统一从默认样式起算，
             // 简单且在真实输出里几乎无感（大多数行自带重置码）。
             const spans = useMemo(() => parseAnsi(entry.text), [entry.text]);
-            const kindClass = `so-line so-line--${entry.kind || 'stdout'}`;
-            // 右侧栏窄：只在流边界（开/关/失败）显示机器名，普通输出行省掉这段宽度
-            const boundary = entry.kind === 'stream-open' || entry.kind === 'stream-close' || entry.kind === 'stream-fail';
-            const showServer = entry.serverName && (!compact || boundary);
+            const kind = entry.kind || 'stdout';
+            const kindClass = `so-line so-line--${kind}`;
+            // 输入行照真终端的样子画：`用户名@主机:~$` 在前、命令在后。
+            // 提示符单独一段并弱化，命令保持亮绿加粗 —— 这样「哪行是我发的」不用猜。
+            if (kind === 'input') {
+                return h('div', { className: kindClass },
+                    h('span', { className: 'so-line-gutter' },
+                        h('span', { className: 'so-line-time' }, timeText(entry.at))),
+                    h('span', { className: 'so-line-text' },
+                        entry.prompt ? h('span', { className: 'so-line-prompt' }, entry.prompt) : null,
+                        h('span', { className: 'so-cmd' }, renderSpans(spans, entry.seq))));
+            }
+            // 流边界（开/关/失败）才显示机器名：普通输出行省掉这段宽度。
+            // 会话头自己已经带机器名了，不再重复。
+            const boundary = kind === 'stream-fail';
+            const showServer = entry.serverName && (!compact || boundary) && kind !== 'stream-open';
             return h('div', { className: kindClass },
                 h('span', { className: 'so-line-gutter' },
                     h('span', { className: 'so-line-time' }, timeText(entry.at)),
@@ -1278,7 +1297,7 @@ window.__ModuleLoader__.load({
             }
         }
 
-        return { inject, apply, __internals: { OpsBody, Panel, RightTab, ServersView, ConsoleView, ServerRow, IdentityEditor, AppList, ProfileDrawer, ProfileOverlay, profileStore, CSS, PANEL_ID, TAB_ID, TAB_KIND, parseAnsi } };
+        return { inject, apply, __internals: { OpsBody, Panel, RightTab, ServersView, ConsoleView, TerminalLine, ServerRow, IdentityEditor, AppList, ProfileDrawer, ProfileOverlay, profileStore, CSS, PANEL_ID, TAB_ID, TAB_KIND, parseAnsi } };
     },
 });
 

@@ -13,6 +13,7 @@ import { createJournal } from './lib/journal.js';
 import { buildTools } from './lib/tools.js';
 import { parseEnv, parseApps, appCommand, splitSections } from './lib/probe.js';
 import { createOpsService } from './lib/service.js';
+import { shellPrompt, promptForCommand } from './lib/prompt.js';
 
 /** 造一把**假**私钥。刻意不写成完整 PEM 字面量：发布闸门 publish-gate 见到整块 PEM 会拦下，
  *  而这里只是自测夹具，不该让真闸门为它开口子（否则那道闸门也就形同虚设）。 */
@@ -127,17 +128,123 @@ ok('私钥认证：密文入库并落成 0600 的临时密钥文件', () => {
 console.log('[4] journal');
 const journal = createJournal({ dir: logDir, redactor, streamIdFactory: (() => { let n = 0; return () => `t${++n}`; })() });
 ok('流式输出逐行入账且已脱敏', () => {
-    const sid = journal.openStream({ serverId: 'x', serverName: '测试', title: 'run', input: 'echo ' + FIXTURE_PW });
-    journal.output(sid, 'out', 'line1\nline2\n');
-    journal.closeStream(sid, { code: 0, durationMs: 12 });
+    const { streamId } = journal.openStream({ serverId: 'x', serverName: '测试', where: 'u@h:22' });
+    journal.input(streamId, { prompt: 'root@nas:~#', command: 'echo ' + FIXTURE_PW });
+    journal.output(streamId, 'out', 'line1\nline2\n');
+    journal.closeStream(streamId, { code: 0, durationMs: 12 });
     const entries = journal.snapshot({ limit: 20 });
     assert.ok(entries.some((e) => e.kind === 'stdout' && e.text === 'line1'));
     const joined = entries.map((e) => e.text).join('\n');
     assert.ok(!joined.includes(FIXTURE_PW), '日志里出现了明文');
 });
+ok('输入行带 prompt，且 prompt 也走脱敏', () => {
+    const { streamId } = journal.openStream({ serverId: 'x', serverName: '测试', where: 'u@h:22' });
+    journal.input(streamId, { prompt: 'root@nas:~#', command: 'mysql -p' + FIXTURE_PW });
+    const line = journal.snapshot({ limit: 5 }).find((e) => e.kind === 'input');
+    assert.strictEqual(line.prompt, 'root@nas:~#', '提示符应单独存一个字段');
+    assert.ok(!line.text.includes(FIXTURE_PW), '命令里的明文应被抹掉');
+});
+ok('同一台机器连续操作：会话头只打一次（用户反馈的核心）', () => {
+    const j = createJournal({ dir: path.join(tmp, 'logs-session'), redactor, streamIdFactory: (() => { let n = 0; return () => `u${++n}`; })() });
+    for (let i = 0; i < 5; i += 1) {
+        const { streamId } = j.openStream({ serverId: 'same', serverName: '同一台', where: 'u@h:22' });
+        j.input(streamId, { prompt: 'root@nas:~#', command: `cmd${i}` });
+        j.output(streamId, 'out', `out${i}`);
+        j.closeStream(streamId, { code: 0, durationMs: 10 });
+    }
+    const all = j.snapshot({ limit: 200 });
+    assert.strictEqual(all.filter((e) => e.kind === 'stream-open').length, 1, '5 条命令只该有一个会话头');
+    assert.strictEqual(all.filter((e) => e.kind === 'input').length, 5, '每条命令一行输入');
+    // 退出码不许逐条打：连续 5 条命令，屏上不该出现 5 条「结束/退出码」
+    assert.strictEqual(all.filter((e) => e.kind === 'stream-close').length, 0, '会话没结束就不该打退出码');
+    j.flushSessions();
+    const after = j.snapshot({ limit: 200 }).filter((e) => e.kind === 'stream-close');
+    assert.strictEqual(after.length, 1, '会话收尾只打一条');
+    // 全成功时不显示退出码（用户要求「更精简」），只报命令数与耗时
+    assert.ok(!after[0].text.includes('退出码'), `全成功不该摆退出码：${after[0].text}`);
+    assert.ok(after[0].text.includes('5 条命令'), `应汇总命令数：${after[0].text}`);
+});
+ok('切换机器：新会话头，并先收尾上一台', () => {
+    const j = createJournal({ dir: path.join(tmp, 'logs-switch'), redactor, streamIdFactory: (() => { let n = 0; return () => `s${++n}`; })() });
+    const a = j.openStream({ serverId: 'A', serverName: '甲机', where: 'u@a:22' });
+    j.closeStream(a.streamId, { code: 0, durationMs: 5 });
+    const b = j.openStream({ serverId: 'B', serverName: '乙机', where: 'u@b:22' });
+    j.closeStream(b.streamId, { code: 0, durationMs: 5 });
+    const all = j.snapshot({ limit: 50 });
+    const heads = all.filter((e) => e.kind === 'stream-open');
+    assert.strictEqual(heads.length, 2, '换机器必须重新打会话头');
+    assert.ok(heads[0].text.includes('甲机') && heads[1].text.includes('乙机'));
+    // 上一台的收尾要在切走时补上（不能因为换了机器就把甲的尾巴吞掉）
+    const closes = all.filter((e) => e.kind === 'stream-close');
+    assert.strictEqual(closes.length, 1, '切走时应收尾上一台');
+    // 全程成功的会话不摆退出码，靠「哪台机器」区分是谁的尾巴
+    assert.ok(closes[0].text.includes('1.0s') || /■/.test(closes[0].text), closes[0].text);
+});
+ok('失败当场打红字，且计入会话尾', () => {
+    const j = createJournal({ dir: path.join(tmp, 'logs-fail'), redactor, streamIdFactory: (() => { let n = 0; return () => `f${++n}`; })() });
+    const { streamId } = j.openStream({ serverId: 'F', serverName: '丙机', where: 'u@f:22' });
+    j.closeStream(streamId, { code: 127, durationMs: 5, failure: { kind: 'exec', message: '命令不存在' } });
+    const fail = j.snapshot({ limit: 20 }).filter((e) => e.kind === 'stream-fail');
+    assert.strictEqual(fail.length, 1, '失败必须当场可见，不能被合并');
+    assert.ok(fail[0].text.includes('命令不存在'));
+    j.flushSessions();
+    const tail = j.snapshot({ limit: 20 }).filter((e) => e.kind === 'stream-close');
+    assert.ok(tail[0].text.includes('1 次失败'), tail[0].text);
+    // 有失败时才把退出码摆出来（这是要人注意的信息）
+    assert.ok(tail[0].text.includes('退出码 127'), tail[0].text);
+});
+ok('空闲超时自动收尾（用户实际最常走的那条路）', async () => {
+    // 用户不会手动「结束会话」：敲完就走，会话要靠空闲计时器收尾。
+    // 这条路径不测，「退出码不重复」就只在测试里成立、在真实使用里不成立。
+    const j = createJournal({
+        dir: path.join(tmp, 'logs-idle'), redactor, sessionIdleMs: 30,
+        streamIdFactory: (() => { let n = 0; return () => `i${++n}`; })(),
+    });
+    const { streamId } = j.openStream({ serverId: 'I', serverName: '丁机', where: 'u@i:22' });
+    j.input(streamId, { prompt: 'root@i:~#', command: 'sleep 1' });
+    j.output(streamId, 'out', 'done');
+    j.closeStream(streamId, { code: 0, durationMs: 900 });
+    assert.strictEqual(j.snapshot({ limit: 50 }).filter((e) => e.kind === 'stream-close').length, 0, '命令刚跑完不该立刻收尾');
+    await new Promise((r) => setTimeout(r, 80));
+    const closed = j.snapshot({ limit: 50 }).filter((e) => e.kind === 'stream-close');
+    assert.strictEqual(closed.length, 1, '空闲后应自动收尾一次');
+    assert.ok(closed[0].text.includes('丁机'), closed[0].text);
+    assert.ok(!closed[0].text.includes('退出码'), `全成功仍不摆退出码：${closed[0].text}`);
+});
+
 ok('日志落盘也不含明文', () => {
     const raw = fs.readFileSync(path.join(logDir, 'ops-console.ndjson'), 'utf8');
     assert.ok(!raw.includes(FIXTURE_PW));
+});
+
+console.log('[4b] prompt');
+ok('提示符照真 shell 的样式', () => {
+    assert.strictEqual(shellPrompt({ user: 'root', hostname: 'nas', cwd: '~' }), 'root@nas:~#');
+    assert.strictEqual(shellPrompt({ user: 'ubuntu', hostname: 'vm1' }), 'ubuntu@vm1:~$', '非 root 用 $');
+});
+ok('登录用户不是 root 时，提示符用真实用户名 + $（用户指出不能假设 root）', () => {
+    // 用户原话：「虽然我告诉你的都是 root 密码，但不代表其他用户也是」。
+    // 提示符里的用户名必须来自凭证里的 user，不能写死 root。
+    assert.strictEqual(shellPrompt({ user: 'deploy', hostname: 'web01' }), 'deploy@web01:~$');
+    assert.strictEqual(shellPrompt({ user: 'www-data', hostname: 'web01' }), 'www-data@web01:~$');
+    // 只有真的是 root 才给 #
+    assert.ok(!shellPrompt({ user: 'deploy', hostname: 'web01' }).endsWith('#'));
+});
+ok('用户名缺失时不冒充 root', () => {
+    // 凭证里 user 是必填，正常走不到；但真走到了也不许显示成 root —— 那是在断言特权身份，
+    // 而我们对这个身份一无所知。
+    assert.ok(!shellPrompt({ hostname: 'h1' }).startsWith('root@'));
+    assert.ok(shellPrompt({ hostname: 'h1' }).endsWith('$'), '未知身份按非特权处理');
+});
+ok('拿不到主机名时退回地址，不编假名字', () => {
+    assert.strictEqual(shellPrompt({ user: 'root', hostname: '', host: '10.0.0.5' }), 'root@10.0.0.5:~#');
+});
+ok('脏主机名被丢弃', () => {
+    assert.strictEqual(shellPrompt({ user: 'root', hostname: 'a b/c', host: 'h1' }), 'root@h1:~#');
+});
+ok('命令带 cd 绝对路径时提示符跟着走', () => {
+    assert.strictEqual(promptForCommand({ user: 'root', hostname: 'nas' }, 'cd /var/log && ls'), 'root@nas:/var/log#');
+    assert.strictEqual(promptForCommand({ user: 'root', hostname: 'nas' }, 'ls -la'), 'root@nas:~#');
 });
 
 console.log('[5] probe 解析');

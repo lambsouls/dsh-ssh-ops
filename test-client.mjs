@@ -59,9 +59,20 @@ ok('stripAnsi 给模型看', () => {
 
 console.log('[client] 数据结构契约');
 ok('服务器行需要的字段都在', () => {
-    for (const field of ['appCount', 'systemAppCount', 'reachable', 'auth', 'lastUsedAt', 'apps', 'profile']) {
+    // systemAppCount 仍由 API 返回，但**不再显示成行头徽章** ——
+    // 那个「+63」对用户没信息量，还把右侧按钮挤得对不齐。
+    // 系统服务数量只在展开区的「系统自带服务 · N」折叠条上展示。
+    for (const field of ['appCount', 'reachable', 'auth', 'lastUsedAt', 'apps', 'profile']) {
         assert.ok(client.includes(field), `面板没用到 ${field}`);
     }
+});
+
+ok('行头不再显示「+N」系统服务徽章（会破坏对齐）', () => {
+    const src = client.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    assert.ok(!src.includes('+${s.systemAppCount}'), '行头不该再有 +N 徽章');
+    assert.ok(!src.includes('systemAppCount ?'), '不该有条件渲染 +N');
+    // 但展开区的折叠条要还在（系统服务仍然可查）
+    assert.ok(src.includes('t.systemApps'), '「系统自带服务」折叠条不该被一起删掉');
 });
 ok('系统服务可折叠', () => {
     assert.ok(client.includes('systemApps'), '缺系统服务折叠分组');
@@ -90,6 +101,7 @@ ok('档案入口不再用 window.open（Electron 会静默拦掉它）', () => {
     assert.ok(!code.includes('window.open('), '不许再用 window.open 打开档案（Electron 会静默拦截）');
     assert.ok(code.includes("'shell.overlay'"), '档案抽屉应注册在 shell.overlay（面板内 fixed 会被容器限制）');
 });
+
 
 // ── 真的把组件跑起来 ────────────────────────────────────────────────────
 // 静态检查只能证明「代码里写了这几个词」，证明不了「传进去的数据能渲染」。
@@ -167,7 +179,7 @@ function texts(node, out = []) {
 
 const { internals, reset } = renderTree();
 ok('模块加载并导出 internals', () => {
-    for (const k of ['Panel', 'RightTab', 'ServersView', 'ConsoleView', 'CSS']) {
+    for (const k of ['Panel', 'RightTab', 'ServersView', 'ConsoleView', 'TerminalLine', 'CSS']) {
         assert.ok(internals?.[k], `缺 ${k}`);
     }
 });
@@ -395,6 +407,97 @@ ok('标签以胶囊形式渲染（不是一坨逗号串）', () => {
     const tree = internals.ServersView({ data: { count: 1, servers: [SAMPLE_SERVER] }, loading: false, error: null, t: T });
     // 折叠态没有标签区，直接查样式类是否存在
     assert.ok(client.includes('.so-tag {'), '缺标签胶囊样式');
+});
+
+// ── 终端：输入/输出必须一眼分得开（用户反馈） ────────────────────────
+// 用户原话：「现在的输入输出我不太能看得出来，我建议你直接使用 ssh 的完整输入输出显示」
+// 「绿色的是输入吧…绿色输入显示必须带上类似 用户名@主机:~# 这样的前缀」。
+// 所以这一组守的是三条视觉契约：输入行有提示符、提示符与命令分开着色、会话头只出一次。
+// 注意夹具里刻意用了非 root 用户（`deploy@vm`）—— 提示符不能假设登录用户是 root。
+console.log('[client] 终端输入/输出');
+
+/** 造一条终端日志条目（形状与 lib/journal.js 落盘一致）。 */
+function entry(kind, text, extra = {}) {
+    return { seq: Math.floor(Math.random() * 1e6), at: '2026-11-20T10:00:00.000Z', kind, level: 'info', serverId: 'demo-abc123', serverName: '演示机', streamId: 's1', text, ...extra };
+}
+
+ok('输入行渲染出提示符 + 命令两段', () => {
+    reset();
+    const line = entry('input', 'systemctl status nginx', { prompt: 'deploy@fileserver:~$' });
+    const tree = internals.TerminalLine({ entry: line, wrap: true, compact: false });
+    const all = texts(tree).join(' ');
+    assert.ok(all.includes('deploy@fileserver:~$'), `缺提示符：${all}`);
+    assert.ok(all.includes('systemctl status nginx'), `缺命令：${all}`);
+    // 提示符必须在命令**前面**（真终端就是这个顺序）
+    assert.ok(all.indexOf('deploy@') < all.indexOf('systemctl'), '提示符应排在命令之前');
+});
+
+ok('提示符与命令是分开的两个节点（各自着色）', () => {
+    reset();
+    const line = entry('input', 'ls -la', { prompt: 'ubuntu@vm1:~$' });
+    const tree = internals.TerminalLine({ entry: line, wrap: true, compact: false });
+    let promptNode = null;
+    let cmdNode = null;
+    (function walk(n) {
+        if (!n || typeof n !== 'object') return;
+        if (n.props?.className === 'so-line-prompt') promptNode = n;
+        if (n.props?.className === 'so-cmd') cmdNode = n;
+        for (const c of n.children ?? []) walk(c);
+    })(tree);
+    assert.ok(promptNode, '提示符应有自己的 so-line-prompt 节点');
+    assert.ok(cmdNode, '命令应有自己的 so-cmd 节点');
+});
+
+ok('文案不假设登录用户是 root（用户指出）', () => {
+    // 用户原话：「虽然我告诉你的都是 root 密码，但不代表其他用户也是，
+    //            所以你就不该写『带 root@主机:~# 提示符』，应该写成（带 用户名@主机:~# 提示符）」。
+    // 这条守的是「所有面向用户的文案里，提示符示例都用 用户名@主机，不写死 root」。
+    const hints = [
+        client, // client.js 内的 COPY.zh / COPY.en
+        fs.readFileSync(new URL('./locale/zh.json', import.meta.url), 'utf8'),
+        fs.readFileSync(new URL('./locale/en.json', import.meta.url), 'utf8'),
+        fs.readFileSync(new URL('./README.md', import.meta.url), 'utf8'),
+    ];
+    for (const src of hints) {
+        assert.ok(!/root@主机/.test(src), '文案里不该出现「root@主机」，应写「用户名@主机」');
+        assert.ok(!/root@host/.test(src), '文案里不该出现「root@host」，应写「user@host」');
+    }
+    // 但「root 用 #、普通用户用 $」这条语义要保留说明（它不是假设，是事实）
+    assert.ok(client.includes('用户名@主机'), '应说明提示符是 用户名@主机');
+});
+
+
+ok('没有 prompt 字段的老日志也不崩（向后兼容）', () => {
+    reset();
+    // v0.6.2 及更早的 ops-console.ndjson 里 input 条目没有 prompt 字段，
+    // 刷新页面会回放这些历史 —— 渲染必须容忍。
+    const tree = internals.TerminalLine({ entry: entry('input', 'echo old'), wrap: true, compact: false });
+    assert.ok(texts(tree).join(' ').includes('echo old'));
+});
+
+ok('配色顺序：绿(输入)在蓝(连接信息)之后，不许反过来', () => {
+    // 用户原话：「绿色要在蓝色后显示」。这在数据层定序 —— 会话头(蓝)先入账，输入行(绿)后入账。
+    // 面板按 seq 顺序渲染，所以只要 Host 侧是这个顺序，视觉上就是先蓝后绿。
+    const service = fs.readFileSync(new URL('./lib/service.js', import.meta.url), 'utf8');
+    const openAt = service.indexOf('journal.openStream(');
+    const inputAt = service.indexOf('journal.input(');
+    assert.ok(openAt > 0 && inputAt > 0, '找不到会话头/输入行的入账点');
+    assert.ok(openAt < inputAt, '会话头必须在输入行之前入账');
+    // 输入行要等 begin 事件（连上了）之后才打，这样才拿得到远端主机名
+    const beginAt = service.indexOf("event.type === 'begin'");
+    assert.ok(beginAt > 0, '缺少 begin 事件处理');
+    assert.ok(service.slice(beginAt).includes('logInput('), '输入行应在 begin 事件里打（才拿得到主机名）');
+});
+
+ok('输入行不再用「$ 命令」的老写法', () => {
+    const journalSrc = fs.readFileSync(new URL('./lib/journal.js', import.meta.url), 'utf8');
+    assert.ok(!journalSrc.includes('`$ ${input}`'), '别再把命令塞成「$ xxx」一行，改成 prompt + 命令两段');
+});
+
+ok('会话头用 ● 标记，且带连接地址', () => {
+    const journalSrc = fs.readFileSync(new URL('./lib/journal.js', import.meta.url), 'utf8');
+    assert.ok(journalSrc.includes('● '), '会话头应有醒目标记');
+    assert.ok(journalSrc.includes('where'), '会话头应带上连接地址（用户要知道连的是哪台、哪个端口）');
 });
 
 console.log(`\n通过 ${passed} 项${process.exitCode ? '，有失败' : '，全部通过'}`);

@@ -138,9 +138,10 @@ lib/
   profile.js        ★ 服务器档案（每台机器独有的运维知识，明文）
   profile-html.js   档案的独立 HTML 页面（自包含，转义 + 安全头）
   redact.js         脱敏（已知值 + 模式兜底）
-  journal.js        操作日志（环形缓冲 + NDJSON）
+  journal.js        操作日志（环形缓冲 + NDJSON + 会话去重）
+  prompt.js         输入行的真终端提示符（user@host:cwd#）
   ssh.js            Node → Python 桥（spawn + NDJSON 事件流）
-  ssh_exec.py       paramiko 执行器
+  ssh_exec.py       paramiko 执行器（连上后顺带取远端 hostname）
   probe.js          环境/应用探测脚本与解析
   service.js        编排层：exec / probe / discoverApps / appAction / 档案
   tools.js          9 只工具定义
@@ -165,12 +166,43 @@ scripts/
 工具层 tools.js
   └─ service.exec()
        ├─ vault.secretsFor()      解出凭证，登记给 redactor
-       ├─ journal.openStream()    控制台开一条流
+       ├─ journal.openStream()    控制台开会话：同一台机器连续操作时**不出第二个会话头**
        ├─ ssh.runRemote()         spawn python，凭证走 stdin
-       │    └─ ssh_exec.py        paramiko 连接、跑命令、发 NDJSON 事件
+       │    └─ ssh_exec.py        paramiko 连接 → 取远端 hostname → 跑命令 → 发 NDJSON 事件
+       ├─ journal.input()         begin 事件到达后打输入行：prompt + 命令（**排在会话头之后**）
        ├─ journal.output()        每行实时入日志（保留 ANSI）
        └─ 返回 { stdout: stripAnsi(...), code, ... }
 ```
+
+### 会话（v0.7.0）：控制台为什么不是「一条命令一段」
+
+旧版每条命令都打一遍 `▶ 标题 / 连接 xxx / 已连接 / ■ 退出码 0`。连续对同一台机器敲五条命令，
+屏幕上就是五段重复蓝字和五条退出码 —— 用户的反馈是「别反复输出相同的连接」「退出码最后一次就行」。
+
+现在把连续操作同一台机器当成**一个 SSH 会话**（`journal.js` 里的 `session`）：
+
+| 事件 | 什么时候打 | 为什么 |
+|---|---|---|
+| 会话头（蓝 `●`） | 切换机器 / 空闲超时后 | 用户要知道「现在连的是哪台」，但不需要看五遍 |
+| 输入行（提示符 + 绿命令） | 每条命令，**begin 事件之后** | 排在连接信息后面，才是真终端的顺序；且这时才拿得到远端主机名 |
+| 输出（原色） | 实时 | —— |
+| 失败（红） | 当场，**不合并** | 失败是「这次要人管」的信号，不能被归进会话尾巴里 |
+| 会话尾（灰 `■`） | 切换机器 / 空闲 3 分钟 / 清空视图时，**一次** | 退出码、命令数、总耗时 |
+
+**判据的坑**：`closeStream()` 收的是「一条流」，但退出码属于「一个会话」。
+所以收尾**不在 closeStream 里做**，而是由 `endSession()` 在切机/空闲时做。
+`closeStream` 只负责记 `lastCode` 和启动空闲计时。
+
+**退出码只在非 0 或有失败时显示**：全成功时「退出码 0」是纯噪音（用户明确要求精简）。
+但机器名始终保留 —— 收尾行经常紧挨着下一台的会话头，不写名字就分不清是谁的尾巴。
+
+**空闲窗口是 3 分钟**（`SESSION_IDLE_MS`）：一次运维动作（看状态 → 改配置 → 重启 → 再确认）
+通常在这个窗口内完成；隔得更久，用户自己也需要重新看到连的是哪台。
+计时器在**命令进行中不启动**（`openStream` 里 `stopTimer()`），长命令不会被自己超时切断。
+
+**测试要点**：`test-host.mjs` 覆盖了「5 条命令只有 1 个会话头」「会话没结束就打退出码 = 0 条」
+「空闲超时自动收尾」这几条 —— 空闲那条尤其重要，因为**真实使用里没有「手动结束会话」这个动作**，
+不测它，「退出码不重复」就只在测试里成立。
 
 ---
 
@@ -322,15 +354,15 @@ plugin_manager set_plugin target="include:dsh-ssh-ops" enabled=true
 ## 5. 验证
 
 ```bash
-# 单元与集成（215 项）
-node test-host.mjs                # 32 项：加密/脱敏/凭证库/日志/探测解析/工具契约/参数校验
+# 单元与集成（241 项）
+node test-host.mjs                # 43 项：加密/脱敏/凭证库/日志与会话/探测解析/提示符/工具契约/参数校验
 node test-profile.mjs             # 25 项：档案归一化/增量合并/删除/一致性/渲染/文件边界
 node test-identity.mjs            # 35 项：改名/标签的改动面（重点测「除此之外什么都没变」）
 node test-reassign.mjs            # 19 项：换 serverId 后凭证库与档案是否仍对得上
 node test-history-scan.mjs          # 18 项：历史扫描 + 可利用性分级（真假的判据）
 node test-profile-page.mjs         # 31 项：档案页面内容完整 + HTML 转义（防 XSS）
 node test-ansi.mjs                # 14 项：ANSI 解析（16/256/真彩、跨行继承、SGR 关闭码）
-node test-client.mjs              # 25 项：客户端静态闸门 + 真渲染（假 React + vm 跑组件）
+node test-client.mjs              # 38 项：客户端静态闸门 + 真渲染（假 React + vm 跑组件）+ 终端输入/输出视觉契约
 node scripts/gate-selftest.mjs    # 16 项：闸门对抗性自测（含真实泄漏样本）
 
 # 语法
@@ -374,6 +406,11 @@ node scripts/verify-remote.mjs        # ③ 远端复查 —— 必须手动
 | 公开文档里写进真实 serverId + 拓扑特征 | 当时没有这条判据（现已补 `SERVER_ID`） |
 | `locale/*.json` 文案没跟上新功能（仍写「只读」） | 文案过时不触发任何检查 |
 
+**2026-11-20 又栽在同一类事上**：v0.7.0 的终端以「真终端提示符」为例写进了 `README.md` /
+`client.js` 注释 / `ssh_exec.py` 注释 / 测试夹具 —— 那串 `root@<真实主机名>:~#` 是从实测输出里
+**复制**过来的，于是四份文件里都有了真实主机名。**发布闸门三档全绿**，因为它的判据里根本没有
+「主机名」这一类（它查 IP、serverId、私钥、密码、token、本机路径）。
+
 **所以推送前要多做一步「人级复审」**，闸门不能替代：
 
 ```bash
@@ -381,9 +418,27 @@ node scripts/verify-remote.mjs        # ③ 远端复查 —— 必须手动
 # ② 有没有真实标识混进文档或测试夹具
 git grep -n -E '\b[a-z][a-z0-9-]*-[0-9a-f]{6}\b' -- .      # serverId 形状
 git grep -n -E '[0-9]{1,3}(\.[0-9]{1,3}){3}' -- .          # IP
+git grep -n -i -E '<你的机器名片段1>|<机器名片段2>' -- .     # ★ 主机名：从实测输出抄例子时必查
 # ③ 新功能的文案在所有暴露面都同步了吗（client.js / locale / README / 工具描述）
 # ④ 提交历史也是公开面（verify-remote 会扫 commit message —— 它真的抓到过）
 ```
+
+**「从实测输出里抄例子」是这条泄漏的高危动作**：为了说明一个新样式，最自然的写法就是
+把刚才屏幕上看到的那一行贴进文档 —— 而那一行恰好带着真实主机名/路径/用户名。
+**抄例子时一律替换成 `fileserver` / `10.0.0.5` / `<你的机器名>` 这类占位符。**
+
+### 6.1.6 文案里不许假设「登录用户是 root」
+
+2026-11-20 用户指出：控制台说明写成「带 `root@主机:~#` 提示符」是错的 ——
+**「虽然我告诉你的都是 root 密码，但不代表其他用户也是」**。
+
+这不是措辞洁癖：提示符里的用户名来自凭证里的 `user`，`#` 只给 root、其余用 `$`。
+文案若把 root 当默认，就等于向用户暗示「这台机器是 root 登录的」，而实际的 `deploy@host:~$`
+会让人以为自己看到的东西不对。**示例一律写「用户名@主机」/ `user@host`，不写死 root。**
+
+`test-client.mjs` 有一条守着：所有面向用户的文案（`client.js` 的 COPY、两个 `locale/*.json`、
+`README.md`）里不许出现 `root@主机` / `root@host`。测试夹具也刻意用非 root 用户（`deploy@fileserver`），
+这样「提示符真的会跟着用户变」才算被测到。
 
 **判据一句话**：闸门守「字符串长什么样」，人守「这句话该不该公开」。两件事不能互相替代。
 

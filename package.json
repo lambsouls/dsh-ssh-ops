@@ -1,6 +1,6 @@
 {
   "name": "dsh-ssh-ops",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "private": true,
   "description": "服务器运维台（dsh-ssh-ops）：集中保管 Linux 服务器凭证，按会话指令走 SSH 执行命令、巡检已装应用并管理服务；每台服务器一份独立档案，记录它独有的脾气（共享 IP、端口不对应、出网受限、什么不能碰）；Web 端提供服务器总览与实时操作控制台，并且可以自定义显示名与标签。",
   "keywords": ["dsh", "dsh-plugin", "ssh", "ops", "server", "运维", "服务器"],
