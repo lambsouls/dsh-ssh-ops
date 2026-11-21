@@ -27,6 +27,19 @@ ok('注册了右侧栏 tab 类型与内容', () => {
     assert.ok(client.includes("ctx.sidebarRightTabs.register"), '缺 tab 类型注册');
     assert.ok(client.includes("'sidebar.right.pane.tab'"), '缺 tab 内容注册');
 });
+ok('guide 条目带 id（宿主契约必填，缺了只是暂时不炸）', () => {
+    // 宿主 SidebarRightGuideEntry.id 是必填且在同一个 tab 类型内唯一。只有一条时缺 id 撞不上，
+    // 加第二条才会以「duplicate guide entry id」把整个 tab 类型注册打挂 —— 所以在这里守住。
+    const block = /guide:\s*\[([\s\S]*?)\]/.exec(client);
+    assert.ok(block, '找不到 guide 条目声明');
+    const entries = block[1].split(/\},\s*\{|\{/).filter((s) => s.includes('title'));
+    assert.ok(entries.length > 0, 'guide 条目解析为空');
+    for (const entry of entries) {
+        assert.ok(/\bid\s*:/.test(entry), `guide 条目缺 id：${entry.trim().slice(0, 80)}`);
+    }
+    const ids = [...block[1].matchAll(/\bid\s*:\s*'([^']+)'/g)].map((m) => m[1]);
+    assert.strictEqual(new Set(ids).size, ids.length, `guide 条目 id 重复：${ids.join(', ')}`);
+});
 ok('注册了侧栏入口与主面板', () => {
     assert.ok(client.includes("'sidebar.panellist'"));
     assert.ok(client.includes("name: 'main'"));

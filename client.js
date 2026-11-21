@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
         const PANEL_ID = 'dsh-ssh-ops';
         const TAB_ID = 'dsh-ssh-ops';
         const TAB_KIND = 'ssh-ops';
-        const PLUGIN_VERSION = '0.7.0';
+        const PLUGIN_VERSION = '0.7.1';
 
         // ── 文案 ─────────────────────────────────────────────────────────
         const COPY = {
@@ -1216,7 +1216,10 @@ window.__ModuleLoader__.load({
                 kind: TAB_KIND,
                 priority: 'extension',
                 title: () => '🖧 运维',
-                guide: [{ order: 95, title: () => '服务器运维台', description: () => '服务器总览与实时操作终端' }],
+                // guide 条目必须带 id（SidebarRightGuideEntry.id 是必填，且在同一个 type 内唯一）。
+                // 现在只有一条，缺 id 也撞不上；将来加第二条就会以「duplicate guide entry id」把整个
+                // tab 类型注册打挂 —— 所以趁只有一条时补齐。
+                guide: [{ id: 'ssh-ops', order: 95, title: () => '服务器运维台', description: () => '服务器总览与实时操作终端' }],
             };
         }
 

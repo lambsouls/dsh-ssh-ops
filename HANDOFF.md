@@ -1,7 +1,7 @@
 # HANDOFF · 交接说明
 
 > 这份文档给**下一个会话**（或未来的我）看：不用读整段对话也能接着干。
-> 最后更新：2026-11-20
+> 最后更新：2026-11-21
 
 > **本文件是公开面的一部分**（随仓库推到 GitHub）。所以这里只写「对任何 clone 的人都成立」的内容：
 > 架构为什么这样、改哪里、怎么验证、有哪些坑。
@@ -10,11 +10,24 @@
 
 ## 一句话现状
 
-`dsh-ssh-ops`（服务器运维台）**v0.7.0**：开发完成，已用真实服务器验收过 SSH 执行、应用发现、
-应用控制与档案落盘；本版把控制台改成**真 SSH 会话的样子**（连接信息不重复、输入行带真提示符、
+`dsh-ssh-ops`（服务器运维台）**v0.7.1**：开发完成，已用真实服务器验收过 SSH 执行、应用发现、
+应用控制与档案落盘；v0.7.0 把控制台改成**真 SSH 会话的样子**（连接信息不重复、输入行带真提示符、
 退出码只在会话收尾时出现一次）。历史版本：v0.5.1 每台服务器独立档案 + 面板改名/改标签，
 v0.6.x 档案改成新标签页、历史扫描与可利用性分级。
 git 仓库已初始化并完成首次提交，工作区干净、内容零敏感数据；仓库已推送到 GitHub。
+
+## v0.7.1 做了什么（对齐 DSH 0.2.2-rc.5 契约复查）
+
+DSH 升到 0.2.2-rc.5 后按「我用了哪些扩展面」倒推复查了一遍，**没有需要迁移的破坏性变更**：
+`tools.register` / `systemPrompt.section` / `webServer.register`（`exact|prefix`）/
+`sidebarRightTabs` + `sidebar.right.pane.tab` + `sidebar.panellist` + `shell.overlay` /
+`dsh.client` 的 `platform|inject|immediately|external` / 12 个 `--dsw-alias-*` 令牌全部仍在原位，
+实测 REST 面、工具调用、系统提示注入、会话式控制台均正常。
+
+唯一改动是**补契约缺字段**：`SidebarRightGuideEntry.id` 是宿主必填（同类型内唯一），
+我们原来只在 guide 条目里写了 `order/title/description`。只有一条时撞不上判重，
+加第二条才会以「duplicate guide entry id」把整个 tab 类型注册打挂 —— 所以顺手补齐，
+并在 `test-client.mjs` 里加一条静态闸门守住（条目必须有 id、id 不许重复）。
 
 ## v0.7.0 做了什么（控制台按真实 SSH 会话排版）
 
