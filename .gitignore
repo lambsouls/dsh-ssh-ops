@@ -36,11 +36,19 @@ dist/
 build/
 *.tsbuildinfo
 
-# --- 截图：可能含真实 IP / 端口 / 主机名（规则 42），不要提交 ---
+# --- 截图：可能含真实 IP / 端口 / 主机名（规则 42）---
+# 默认**不提交**任何截图；只有 screenshots.json 明确引用的市场展示图例外。
+# 线上截图（真实会话）必须留在这个白名单之外 —— 它们含真实服务器地址。
 docs/*.png
 docs/*.jpg
 docs/*.webp
 screenshots/
+
+# 例外：市场展示用的示例数据截图（192.0.2.x 保留段，无真实基础设施）
+!docs/screenshots/
+!docs/screenshots/terminal.png
+!docs/screenshots/servers.png
+!docs/screenshots/profile.png
 
 # --- 编辑器与系统 ---
 .vscode/
