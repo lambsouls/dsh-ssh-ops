@@ -56,8 +56,6 @@ window.__ModuleLoader__.load({
                 profile: '档案',
                 openProfile: '查看档案',
                 close: '关闭',
-                profileCopy: '复制地址',
-                profileCopyHint: '复制档案页地址（可粘到浏览器打开）',
                 profileRole: '角色',
                 profileTraits: '专属特征',
                 profilePortMap: '对外端口 → 内部',
@@ -120,8 +118,6 @@ window.__ModuleLoader__.load({
                 profile: 'Profile',
                 openProfile: 'View profile',
                 close: 'Close',
-                profileCopy: 'Copy URL',
-                profileCopyHint: 'Copy the profile page URL (paste into a browser)',
                 profileRole: 'Role',
                 profileTraits: 'Traits',
                 profilePortMap: 'Public → internal port',
@@ -840,7 +836,6 @@ window.__ModuleLoader__.load({
             }, [onClose]);
 
             const p = data?.profile ?? null;
-            const profileUrl = `${API}/servers/${encodeURIComponent(server.id)}/profile?fence=1`;
 
             const section = (title, count, body) => h('section', { className: 'so-pf-section' },
                 h('div', { className: 'so-pf-h2' },
@@ -949,17 +944,6 @@ window.__ModuleLoader__.load({
                             h('div', { className: 'so-pf-title' }, `${server.name}`),
                             h('div', { className: 'so-pf-sub' }, `${t.profile} · ${server.user}@${server.host}:${server.port}`)),
                         h('span', { className: 'so-head-spacer' }),
-                        h('button', {
-                            className: 'so-btn so-btn--mini', type: 'button',
-                            title: t.profileCopyHint,
-                            onClick: (e) => {
-                                e.stopPropagation();
-                                try {
-                                    // 独立页面地址：可以粘到浏览器里看（那里不受 Electron 新窗口限制）
-                                    navigator.clipboard?.writeText(new URL(profileUrl, location.origin).href);
-                                } catch { /* 剪贴板不可用就忽略 */ }
-                            },
-                        }, t.profileCopy),
                         h('button', { className: 'so-btn so-btn--mini', type: 'button', onClick: onClose }, t.close)),
                     body));
         }

@@ -428,6 +428,30 @@ await (async () => {
     console.log('  ✓ 删凭证后档案成为孤儿（保留而非静默删除）');
 })();
 
+// ── 安全回归：`?fence=1` 的放行范围 ──────────────────────────────────────
+// 事故记录：档案页（`/servers/:id/profile`，返回 HTML）曾走 `?fence=1` 兜底，
+// 于是**任何网页都能直接打开那个 URL 读到服务器档案** ——
+// 顶层导航不带 Origin 头，Host 白名单照样放行，实测 curl 一下就是 200 + 完整档案。
+// 市场维护者在收录时把这条写进了描述，是个真问题。
+//
+// 现在：`?fence=1` 只给 EventSource（浏览器不允许给它设自定义头）用，
+// 那个独立 HTML 页整个删掉了，档案只在面板内抽屉里走 JSON 渲染。
+console.log('[8] 安全回归：?fence=1 只放行 SSE');
+ok('源码里 ?fence 的放行条件只认 console/stream', () => {
+    const src = fs.readFileSync(new URL('./lib/server-api.js', import.meta.url), 'utf8')
+        .split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    assert.ok(!src.includes('isProfilePage'), '档案页的 fence 放行必须已删除');
+    assert.ok(!/third === 'profile'/.test(src), '档案页路由必须已删除');
+    assert.ok(src.includes("(isStream && params.get('fence') === '1')"),
+        '?fence=1 应当只绑定 isStream，不能扩大范围');
+});
+
+ok('档案页的渲染器已随路由一起删除（不留死代码）', () => {
+    const root = new URL('./', import.meta.url);
+    assert.ok(!fs.existsSync(new URL('lib/profile-html.js', root)), 'lib/profile-html.js 应已删除');
+    assert.ok(!fs.existsSync(new URL('test-profile-page.mjs', root)), '它的测试也应一起删除');
+});
+
 console.log(`\n通过 ${passed} 项${process.exitCode ? '，有失败' : '，全部通过'}`);
 fs.rmSync(tmp, { recursive: true, force: true });
 
